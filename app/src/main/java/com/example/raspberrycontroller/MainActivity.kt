@@ -2,6 +2,8 @@
 
 package com.example.raspberrycontroller
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricManager
@@ -111,14 +113,26 @@ class MainActivity : FragmentActivity() {
 
     private var downloadProgress = mutableIntStateOf(-2)
 
+    companion object {
+        private const val REQUEST_CODE_NOTIF = 1001
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // ── Notifications : canaux + permission + service ─────────────────────
+        NotificationHelper.createChannels(this)
+        requestNotificationPermissionIfNeeded()
+        val settings = SettingsManager(this)
+        if (settings.notificationsEnabled) {
+            MonitoringService.start(this)
+        }
+
         setContent {
-            val context  = LocalContext.current
-            val settings = remember { SettingsManager(context) }
-            var themePref by remember { mutableStateOf(settings.theme) }
+            val context   = LocalContext.current
+            val settingsR = remember { SettingsManager(context) }
+            var themePref by remember { mutableStateOf(settingsR.theme) }
 
             val darkTheme = when (themePref) {
                 "light" -> false
@@ -136,12 +150,26 @@ class MainActivity : FragmentActivity() {
                 }
                 AppEntryPoint(
                     activity       = this@MainActivity,
-                    settings       = settings,
+                    settings       = settingsR,
                     onThemeChanged = { newTheme ->
-                        settings.theme = newTheme
-                        themePref      = newTheme
+                        settingsR.theme = newTheme
+                        themePref       = newTheme
                     },
                     onAppReady = { checkForUpdates() }
+                )
+            }
+        }
+    }
+
+    /** Demande la permission POST_NOTIFICATIONS sur Android 13+. */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    REQUEST_CODE_NOTIF
                 )
             }
         }
@@ -356,13 +384,15 @@ class MainActivity : FragmentActivity() {
         onThemeChanged    : (String) -> Unit,
         onBiometricEnabled: () -> Unit
     ) {
-        var showSettings      by remember { mutableStateOf(!settings.isConfigured()) }
-        var showTerminal      by remember { mutableStateOf(false) }
-        var showDocker        by remember { mutableStateOf(false) }
-        var showMonitoring    by remember { mutableStateOf(false) }
-        var showPiHole        by remember { mutableStateOf(false) }
-        var showPiHoleConfig  by remember { mutableStateOf(false) }   // ← nouveau
-        var showWireGuard     by remember { mutableStateOf(false) }
+        var showSettings          by remember { mutableStateOf(!settings.isConfigured()) }
+        var showTerminal          by remember { mutableStateOf(false) }
+        var showDocker            by remember { mutableStateOf(false) }
+        var showMonitoring        by remember { mutableStateOf(false) }
+        var showPiHole            by remember { mutableStateOf(false) }
+        var showPiHoleConfig      by remember { mutableStateOf(false) }
+        var showWireGuard         by remember { mutableStateOf(false) }
+        // ── Nouvel écran notifications ────────────────────────────────────────
+        var showNotifSettings     by remember { mutableStateOf(false) }
 
         when {
             showSettings -> SettingsScreen(
@@ -384,30 +414,35 @@ class MainActivity : FragmentActivity() {
                 settings = settings,
                 onClose  = { showMonitoring = false }
             )
-            // ── Config Pi-hole : prioritaire sur PiHoleScreen ──────────────
             showPiHoleConfig -> PiHoleConfigScreen(
                 settings = settings,
                 onClose  = { showPiHoleConfig = false },
-                onSaved  = { showPiHoleConfig = false }   // retour à PiHoleScreen après save
+                onSaved  = { showPiHoleConfig = false }
             )
             showPiHole -> PiHoleScreen(
                 settings     = settings,
                 onClose      = { showPiHole = false },
-                onOpenConfig = { showPiHoleConfig = true }  // ← ouvre la config
+                onOpenConfig = { showPiHoleConfig = true }
             )
             showWireGuard -> WireGuardScreen(
                 settings = settings,
                 onClose  = { showWireGuard = false }
             )
+            // ── Écran paramètres notifications ────────────────────────────────
+            showNotifSettings -> NotificationSettingsScreen(
+                settings = settings,
+                onBack   = { showNotifSettings = false }
+            )
             else -> ControlScreen(
-                settings         = settings,
-                onOpenSettings   = { showSettings = true },
-                onOpenTerminal   = { showTerminal = true },
-                onOpenDocker     = { showDocker = true },
-                onOpenMonitoring = { showMonitoring = true },
-                onOpenPiHole     = { showPiHole = true },
-                onOpenWireGuard  = { showWireGuard = true },
-                onSshCommand     = { cmd, s, callback ->
+                settings              = settings,
+                onOpenSettings        = { showSettings = true },
+                onOpenTerminal        = { showTerminal = true },
+                onOpenDocker          = { showDocker = true },
+                onOpenMonitoring      = { showMonitoring = true },
+                onOpenPiHole          = { showPiHole = true },
+                onOpenWireGuard       = { showWireGuard = true },
+                onOpenNotifSettings   = { showNotifSettings = true },
+                onSshCommand = { cmd, s, callback ->
                     activity.lifecycleScope.launch {
                         callback(SshClient.execute(s.host, s.port, s.username, s.password, cmd, s.sshTimeoutMs))
                     }
@@ -842,15 +877,16 @@ class MainActivity : FragmentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun ControlScreen(
-        settings        : SettingsManager,
-        onOpenSettings  : () -> Unit,
-        onOpenTerminal  : () -> Unit,
-        onOpenDocker    : () -> Unit,
-        onOpenMonitoring: () -> Unit,
-        onOpenPiHole    : () -> Unit,
-        onOpenWireGuard : () -> Unit,
-        onSshCommand    : (String, SettingsManager, (String) -> Unit) -> Unit,
-        onLed           : (Boolean, SettingsManager, (String) -> Unit) -> Unit
+        settings             : SettingsManager,
+        onOpenSettings       : () -> Unit,
+        onOpenTerminal       : () -> Unit,
+        onOpenDocker         : () -> Unit,
+        onOpenMonitoring     : () -> Unit,
+        onOpenPiHole         : () -> Unit,
+        onOpenWireGuard      : () -> Unit,
+        onOpenNotifSettings  : () -> Unit,                          // ← nouveau
+        onSshCommand         : (String, SettingsManager, (String) -> Unit) -> Unit,
+        onLed                : (Boolean, SettingsManager, (String) -> Unit) -> Unit
     ) {
         var result  by remember { mutableStateOf("Prêt.") }
         var command by remember { mutableStateOf("") }
@@ -858,6 +894,9 @@ class MainActivity : FragmentActivity() {
 
         var systemStats  by remember { mutableStateOf<SystemStats?>(null) }
         var statsLoading by remember { mutableStateOf(true) }
+
+        val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+        val scope       = rememberCoroutineScope()
 
         LaunchedEffect(Unit) {
             while (true) {
@@ -868,100 +907,129 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title   = { Text("Raspberry Controller") },
-                    actions = {
-                        IconButton(onClick = onOpenMonitoring) {
-                            Icon(Icons.Default.BarChart, contentDescription = "Monitoring")
-                        }
-                        IconButton(onClick = onOpenDocker) {
-                            Icon(Icons.Default.Apps, contentDescription = "Docker")
-                        }
-                        IconButton(onClick = onOpenPiHole) {
-                            Icon(Icons.Default.Shield, contentDescription = "Pi-hole")
-                        }
-                        IconButton(onClick = onOpenWireGuard) {
-                            Icon(Icons.Default.VpnLock, contentDescription = "WireGuard")
-                        }
-                        IconButton(onClick = onOpenTerminal) {
-                            Icon(Icons.Default.Terminal, contentDescription = "Terminal")
-                        }
-                        IconButton(onClick = onOpenSettings) {
-                            Icon(Icons.Default.Settings, contentDescription = "Paramètres")
-                        }
-                    }
-                )
-            }
-        ) { padding ->
-            Column(
-                modifier            = Modifier
-                    .padding(padding)
-                    .padding(16.dp)
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                SystemStatusBar(settings = settings, stats = systemStats, loading = statsLoading)
+        data class DrawerItem(
+            val label  : String,
+            val icon   : androidx.compose.ui.graphics.vector.ImageVector,
+            val onClick: () -> Unit
+        )
 
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier            = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("GPIO - LED (pin 17)", style = MaterialTheme.typography.titleMedium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(
-                                onClick  = { loading = true; onLed(true, settings) { result = it; loading = false } },
-                                modifier = Modifier.weight(1f),
-                                enabled  = !loading
-                            ) { Text("Allumer") }
-                            OutlinedButton(
-                                onClick  = { loading = true; onLed(false, settings) { result = it; loading = false } },
-                                modifier = Modifier.weight(1f),
-                                enabled  = !loading
-                            ) { Text("Éteindre") }
-                        }
-                    }
-                }
+        val drawerItems = listOf(
+            DrawerItem("Monitoring",      Icons.Default.BarChart,        onOpenMonitoring),
+            DrawerItem("Docker",          Icons.Default.Apps,            onOpenDocker),
+            DrawerItem("Pi-hole",         Icons.Default.Shield,          onOpenPiHole),
+            DrawerItem("WireGuard",       Icons.Default.VpnLock,         onOpenWireGuard),
+            DrawerItem("Terminal",        Icons.Default.Terminal,        onOpenTerminal),
+            DrawerItem("Notifications",   Icons.Default.Notifications,   onOpenNotifSettings), // ← nouveau
+            DrawerItem("Paramètres",      Icons.Default.Settings,        onOpenSettings),
+        )
 
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier            = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("Commande rapide", style = MaterialTheme.typography.titleMedium)
-                        OutlinedTextField(
-                            value         = command,
-                            onValueChange = { command = it },
-                            label         = { Text("Ex : ls /home/pi") },
-                            modifier      = Modifier.fillMaxWidth()
-                        )
-                        Button(
-                            onClick  = {
-                                loading = true
-                                onSshCommand(command, settings) { result = it; loading = false }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled  = !loading && command.isNotEmpty()
-                        ) { Text("Exécuter") }
-                    }
-                }
-
-                if (loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors   = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                ) {
+        ModalNavigationDrawer(
+            drawerState   = drawerState,
+            drawerContent = {
+                ModalDrawerSheet {
+                    Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        text     = result,
-                        modifier = Modifier.padding(16.dp),
-                        style    = MaterialTheme.typography.bodyMedium
+                        text     = "Raspberry Controller",
+                        style    = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+                        color    = MaterialTheme.colorScheme.primary
                     )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                    drawerItems.forEach { item ->
+                        NavigationDrawerItem(
+                            icon     = { Icon(item.icon, contentDescription = item.label) },
+                            label    = { Text(item.label) },
+                            selected = false,
+                            onClick  = {
+                                scope.launch { drawerState.close() }
+                                item.onClick()
+                            },
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        ) {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Raspberry Controller") },
+                        navigationIcon = {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(Icons.Default.Menu, contentDescription = "Ouvrir le menu")
+                            }
+                        }
+                    )
+                }
+            ) { padding ->
+                Column(
+                    modifier            = Modifier
+                        .padding(padding)
+                        .padding(16.dp)
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SystemStatusBar(settings = settings, stats = systemStats, loading = statsLoading)
+
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier            = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("GPIO - LED (pin 17)", style = MaterialTheme.typography.titleMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick  = { loading = true; onLed(true, settings) { result = it; loading = false } },
+                                    modifier = Modifier.weight(1f),
+                                    enabled  = !loading
+                                ) { Text("Allumer") }
+                                OutlinedButton(
+                                    onClick  = { loading = true; onLed(false, settings) { result = it; loading = false } },
+                                    modifier = Modifier.weight(1f),
+                                    enabled  = !loading
+                                ) { Text("Éteindre") }
+                            }
+                        }
+                    }
+
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier            = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Commande rapide", style = MaterialTheme.typography.titleMedium)
+                            OutlinedTextField(
+                                value         = command,
+                                onValueChange = { command = it },
+                                label         = { Text("Ex : ls /home/pi") },
+                                modifier      = Modifier.fillMaxWidth()
+                            )
+                            Button(
+                                onClick  = {
+                                    loading = true
+                                    onSshCommand(command, settings) { result = it; loading = false }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled  = !loading && command.isNotEmpty()
+                            ) { Text("Exécuter") }
+                        }
+                    }
+
+                    if (loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors   = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
+                        Text(
+                            text     = result,
+                            modifier = Modifier.padding(16.dp),
+                            style    = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             }
         }

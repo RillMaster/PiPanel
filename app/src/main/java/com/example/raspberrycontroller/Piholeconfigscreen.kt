@@ -45,7 +45,6 @@ fun PiHoleConfigScreen(
 ) {
     val scope = rememberCoroutineScope()
 
-    // Toutes les valeurs lues depuis settings au démarrage
     var piPassword   by remember { mutableStateOf(settings.piHolePassword) }
     var showPassword by remember { mutableStateOf(false) }
     var autoRefresh  by remember { mutableStateOf(settings.piHoleAutoRefresh) }
@@ -165,7 +164,6 @@ fun PiHoleConfigScreen(
                 modifier        = Modifier.fillMaxWidth()
             )
 
-            // Indicateur du mot de passe actuellement sauvegarde
             if (settings.piHolePassword.isNotBlank()) {
                 Text(
                     "Mot de passe sauvegarde : ${"*".repeat(settings.piHolePassword.length)} (${settings.piHolePassword.length} car.)",
@@ -260,7 +258,6 @@ fun PiHoleConfigScreen(
                 }
             }
 
-            // Reponse brute du Pi (debug mot de passe)
             debugInfo?.let { info ->
                 Card(colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -345,11 +342,13 @@ fun PiHoleConfigScreen(
     }
 }
 
+// FIX : Pi-hole v6 retourne "enabled"/"disabled", pas "true"/"false"
 private fun parseStatsRaw(raw: String): PiHoleStats? {
     val parts = raw.split("|")
     if (parts.size < 8) return null
+    val enabledStr = parts[0].trim()
     return PiHoleStats(
-        enabled         = parts[0].trim() == "true",
+        enabled         = enabledStr == "enabled" || enabledStr == "true" || enabledStr == "True",
         domainsBlocked  = parts[1].trim().toIntOrNull() ?: 0,
         dnsQueriesToday = parts[2].trim().toIntOrNull() ?: 0,
         adsBlockedToday = parts[3].trim().toIntOrNull() ?: 0,

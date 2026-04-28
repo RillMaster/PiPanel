@@ -1,15 +1,7 @@
-💻 Terminal Improvements
-Command History (swipe up to recall)
-Saved Favorite Commands (like snippets)
-Basic Syntax Highlighting of Output (errors in red, successes in green)
-Autocompletion for Frequent Commands
+🔔 Push Notifications
 
-🐳 Service Management
-List of Docker containers with start/stop/restart
-Toggle Pi-hole on/off + stats (blocked requests)
-WireGuard status + list of connected clients
+Alert if RAM or CPU usage exceeds a defined threshold
 
-📊 Advanced Monitoring
-Historical CPU/RAM graphs (like a 10-minute sparkline)
-GPU temperature (if applicable)
-Disk space per partition
+Alert if the Pi becomes unreachable (watchdog timer)
+
+Notification when a Docker service fails

@@ -106,7 +106,8 @@ PYEOF
 @Suppress("SpellCheckingInspection")
 private fun buildToggleScript(password: String, enable: Boolean): String {
     val esc = password.replace("\\", "\\\\").replace("'", "\\'")
-    val action = if (enable) "true" else "false"
+    // FIX : Python utilise True/False (majuscule), pas true/false
+    val action = if (enable) "True" else "False"
 
     return """python3 << 'PYEOF'
 import urllib.request, json
@@ -175,11 +176,13 @@ suspend fun togglePiHole(settings: SettingsManager, password: String, enable: Bo
     } catch (_: Exception) { false }
 }
 
+// FIX : Pi-hole v6 retourne "enabled"/"disabled", pas "true"/"false"
 private fun parseStatsOrNull(raw: String): PiHoleStats? {
     val parts = raw.split("|")
     if (parts.size < 8) return null
+    val enabledStr = parts[0].trim()
     return PiHoleStats(
-        enabled         = parts[0].trim() == "true",
+        enabled         = enabledStr == "enabled" || enabledStr == "true" || enabledStr == "True",
         domainsBlocked  = parts[1].trim().toIntOrNull() ?: 0,
         dnsQueriesToday = parts[2].trim().toIntOrNull() ?: 0,
         adsBlockedToday = parts[3].trim().toIntOrNull() ?: 0,
@@ -294,18 +297,6 @@ fun PiHoleScreen(
         snackMsg?.let {
             snackState.showSnackbar(it)
             snackMsg = null
-        }
-    }
-
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackState) }
-    ) { padding ->
-
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-        ) {
         }
     }
 
