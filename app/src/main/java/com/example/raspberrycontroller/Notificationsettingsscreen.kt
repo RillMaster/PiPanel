@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,11 +25,11 @@ fun NotificationSettingsScreen(
 
     var notifEnabled     by remember { mutableStateOf(settings.notificationsEnabled) }
     var cpuEnabled       by remember { mutableStateOf(settings.cpuAlertsEnabled) }
-    var cpuThreshold     by remember { mutableStateOf(settings.cpuThreshold.toFloat()) }
+    var cpuThreshold     by remember { mutableFloatStateOf(settings.cpuThreshold.toFloat()) }
     var ramEnabled       by remember { mutableStateOf(settings.ramAlertsEnabled) }
-    var ramThreshold     by remember { mutableStateOf(settings.ramThreshold.toFloat()) }
+    var ramThreshold     by remember { mutableFloatStateOf(settings.ramThreshold.toFloat()) }
     var watchdogEnabled  by remember { mutableStateOf(settings.watchdogEnabled) }
-    var watchdogInterval by remember { mutableStateOf(settings.watchdogIntervalSeconds.toFloat()) }
+    var watchdogInterval by remember { mutableFloatStateOf(settings.watchdogIntervalSeconds.toFloat()) }
     var dockerEnabled    by remember { mutableStateOf(settings.dockerAlertsEnabled) }
 
     Scaffold(
@@ -37,7 +38,7 @@ fun NotificationSettingsScreen(
                 title = { Text("🔔 Notifications") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Retour")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
                 }
             )
@@ -55,8 +56,8 @@ fun NotificationSettingsScreen(
                 onToggle = {
                     notifEnabled                  = it
                     settings.notificationsEnabled = it
-                    if (it) MonitoringService.start(context)
-                    else    MonitoringService.stop(context)
+                    if (it) MonitoringWorker.schedule(context)
+                    else    MonitoringWorker.cancel(context)
                 }
             )
 
@@ -202,8 +203,8 @@ private fun AlertSectionCard(
 /**
  * Slider à pas réguliers.
  *
- * @param step   Pas réel entre chaque valeur (ex: 5 → 10, 15, 20…).
- *               Compose [steps] = nb de paliers intermédiaires = (étendue / pas) - 1.
+ * @param step   Pas réel entre chaque valeur (ex 5 → 10, 15, 20…).
+ *               Compose `steps` = nb de paliers intermédiaires = (étendue / pas) - 1.
  */
 @Composable
 private fun ThresholdSlider(
@@ -216,8 +217,7 @@ private fun ThresholdSlider(
     step       : Int = 5
 ) {
     // Snap la valeur courante au pas (sécurité si la valeur stockée ne tombe pas pile)
-    val snapped = (Math.round(value / step) * step)
-        .toFloat()
+    val snapped = (kotlin.math.round(value / step) * step)
         .coerceIn(valueRange)
 
     // Compose veut le nb de paliers INTERMÉDIAIRES (sans les deux extrémités)
@@ -240,8 +240,7 @@ private fun ThresholdSlider(
             value         = snapped,
             onValueChange = { raw ->
                 // Snap en temps réel pendant le glissement
-                val stepped = (Math.round(raw / step) * step)
-                    .toFloat()
+                val stepped = (kotlin.math.round(raw / step) * step)
                     .coerceIn(valueRange)
                 onChanged(stepped)
             },

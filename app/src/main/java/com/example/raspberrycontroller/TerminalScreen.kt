@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.pm.ActivityInfo
-import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -14,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -34,7 +34,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -55,7 +55,7 @@ private val ANSI_COLORS = arrayOf(
     Color(0xFF2E3436), Color(0xFFCC0000), Color(0xFF4E9A06), Color(0xFFC4A000),
     Color(0xFF3465A4), Color(0xFF75507B), Color(0xFF06989A), Color(0xFFD3D7CF),
     Color(0xFF555753), Color(0xFFEF2929), Color(0xFF8AE234), Color(0xFFFCE94F),
-    Color(0xFF729FCF), Color(0xFFAD7FA8), Color(0xFF34E2E2), Color(0xFFEEEEEC)
+    Color(0xFF729FCF), Color(0xFFAD7FA8), Color(0xFF34E2E2), Color(0xFFEEEEEC),
 )
 private val TERM_DEFAULT_FG = Color(0xFFCCCCCC)
 private fun ansiIndex(n: Int): Color = ANSI_COLORS.getOrNull(n) ?: TERM_DEFAULT_FG
@@ -64,9 +64,9 @@ private fun ansi256(n: Int): Color = when {
     n < 232 -> {
         val i = n - 16
         Color(
-            if (i / 36 == 0) 0 else 55 + (i / 36) * 40,
-            if (i % 36 / 6 == 0) 0 else 55 + (i % 36 / 6) * 40,
-            if (i % 6 == 0) 0 else 55 + (i % 6) * 40
+            if ((i / 36) == 0) 0 else 55 + (i / 36) * 40,
+            if ((i % 36 / 6) == 0) 0 else 55 + (i % 36 / 6) * 40,
+            if ((i % 6) == 0) 0 else 55 + (i % 6) * 40
         )
     }
     else -> (8 + (n - 232) * 10).let { Color(it, it, it) }
@@ -243,7 +243,7 @@ class TerminalEmulator(initialCols: Int = 80, initialRows: Int = 24) {
         }
 
     fun toScreenLinesRaw(): List<String> =
-        grid.map { row -> row.map { it.char }.joinToString("") }
+        grid.asSequence().map { row -> row.map { it.char }.joinToString("") }.toList()
 
     private fun processChar(c: Char) {
         when {
@@ -345,9 +345,17 @@ class TerminalEmulator(initialCols: Int = 80, initialRows: Int = 24) {
             'H', 'f'  -> { cursorRow = (p1(0) - 1).coerceIn(0, rows - 1); cursorCol = (p1(1) - 1).coerceIn(0, cols - 1) }
             'd'       -> cursorRow = (p1(0) - 1).coerceIn(0, rows - 1)
             'J'       -> when (p(0)) {
-                0     -> { fillLine(cursorRow, cursorCol, cols); for (r in cursorRow + 1 until rows) clearRow(r) }
-                1     -> { for (r in 0 until cursorRow) clearRow(r); fillLine(cursorRow, 0, cursorCol + 1) }
-                2, 3  -> { for (r in 0 until rows) clearRow(r); cursorRow = 0; cursorCol = 0 }
+                0     -> {
+                    fillLine(cursorRow, cursorCol, cols)
+                    if (cursorRow + 1 < rows) {
+                        for (r in cursorRow + 1 until rows) clearRow(r)
+                    }
+                }
+                1     -> {
+                    repeat(cursorRow) { r -> clearRow(r) }
+                    fillLine(cursorRow, 0, cursorCol + 1)
+                }
+                2, 3  -> { repeat(rows) { r -> clearRow(r) }; cursorRow = 0; cursorCol = 0 }
             }
             'K'       -> when (p(0)) {
                 0     -> fillLine(cursorRow, cursorCol, cols)
@@ -572,15 +580,14 @@ private fun SnippetDialog(
 fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
     val scope          = rememberCoroutineScope()
     val context        = LocalContext.current
-    val view           = LocalView.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
 
     val ghost = "\u200B"
 
     fun forceShowKeyboard() {
         focusRequester.requestFocus()
-        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+        keyboardController?.show()
     }
 
     var rawInput    by remember { mutableStateOf(TextFieldValue(ghost)) }
@@ -608,8 +615,8 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
     val localShortcuts   = remember { settings.shortcuts.toMutableStateList() }
 
     // Dialog état
-    var showAddSnippet       by remember { mutableStateOf(false) }
-    var editSnippetIndex     by remember { mutableStateOf<Int?>(null) }
+    val showAddSnippet       = remember { mutableStateOf(false) }
+    val editSnippetIndex     = remember { mutableStateOf<Int?>(null) }
 
     // Suggestions d'autocomplétion
     var suggestions          by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -636,7 +643,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
         renderTick++
     }
 
-    var editorState by remember { mutableStateOf<EditorState?>(null) }
+    val editorState = remember { mutableStateOf<EditorState?>(null) }
     var typedLine   by remember { mutableStateOf("") }
 
     // Recalcule les suggestions à chaque changement de typedLine
@@ -679,10 +686,10 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                     val rawPath  = match.groupValues[1].trim()
                     scope.launch { session?.sendRaw("\u0015") }
                     val openedAt = System.currentTimeMillis()
-                    editorState  = EditorState(filePath = rawPath, isLoading = true, sessionId = openedAt)
+                    editorState.value  = EditorState(filePath = rawPath, isLoading = true, sessionId = openedAt)
                     scope.launch {
                         val content = RemoteFileHelper.readFile(settings, rawPath)
-                        editorState = EditorState(
+                        editorState.value = EditorState(
                             filePath       = rawPath,
                             initialContent = content,
                             isLoading      = false,
@@ -856,20 +863,20 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
     // ══════════════════════════════════════════════════════════════════════════
     //  Dialogs snippets
     // ══════════════════════════════════════════════════════════════════════════
-    if (showAddSnippet) {
+    if (showAddSnippet.value) {
         SnippetDialog(
             initialCommand = typedLine,
             title          = "Ajouter un snippet",
             onConfirm = { label, command ->
                 localShortcuts.add(label to command)
                 settings.shortcuts = localShortcuts.toList()
-                showAddSnippet = false
+                showAddSnippet.value = false
             },
-            onDismiss = { showAddSnippet = false }
+            onDismiss = { showAddSnippet.value = false }
         )
     }
 
-    val editIdx = editSnippetIndex
+    val editIdx = editSnippetIndex.value
     if (editIdx != null && editIdx < localShortcuts.size) {
         val (el, ec) = localShortcuts[editIdx]
         SnippetDialog(
@@ -879,21 +886,21 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
             onConfirm = { label, command ->
                 localShortcuts[editIdx] = label to command
                 settings.shortcuts = localShortcuts.toList()
-                editSnippetIndex = null
+                editSnippetIndex.value = null
             },
             onDelete = {
                 localShortcuts.removeAt(editIdx)
                 settings.shortcuts = localShortcuts.toList()
-                editSnippetIndex = null
+                editSnippetIndex.value = null
             },
-            onDismiss = { editSnippetIndex = null }
+            onDismiss = { editSnippetIndex.value = null }
         )
     }
 
     // ══════════════════════════════════════════════════════════════════════════
     //  Affichage
     // ══════════════════════════════════════════════════════════════════════════
-    val currentEditorState = editorState
+    val currentEditorState = editorState.value
     if (currentEditorState != null) {
         key(currentEditorState.sessionId) {
             TextEditorScreen(
@@ -904,7 +911,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                     RemoteFileHelper.writeFile(settings, currentEditorState.filePath, content)
                 },
                 onClose = {
-                    editorState = null
+                    editorState.value = null
                     scope.launch { forceShowKeyboard() }
                 }
             )
@@ -1145,7 +1152,6 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                                     }
                                 }
 
-                                // ── Screen lines avec curseur & coloration ────
                                 screenLines.forEachIndexed { idx, line ->
                                     item(key = "sr_$idx") {
                                         val rawText = screenLinesRaw.getOrElse(idx) { "" }
@@ -1205,7 +1211,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                                 modifier = Modifier
                                     .height(24.dp)
                                     .background(Color(0xFF1A3A1A), RoundedCornerShape(4.dp))
-                                    .clickable { showAddSnippet = true }
+                                    .clickable { showAddSnippet.value = true }
                                     .padding(horizontal = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -1287,7 +1293,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                                 modifier = Modifier
                                     .height(26.dp)
                                     .background(Color(0xFF1A1A2A), RoundedCornerShape(6.dp))
-                                    .clickable { showAddSnippet = true }
+                                    .clickable { showAddSnippet.value = true }
                                     .padding(horizontal = 10.dp),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -1301,7 +1307,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                                 label   = label,
                                 color   = color,
                                 enabled = isConnected,
-                                onLongClick = { editSnippetIndex = idx },
+                                onLongClick = { editSnippetIndex.value = idx },
                                 onClick = { sendCommand(cmd) }
                             )
                         }
@@ -1364,7 +1370,7 @@ private fun ShortcutChip(
                         .size(6.dp)
                         .background(
                             color = color.copy(alpha = if (enabled) 0.9f else 0.3f),
-                            shape = androidx.compose.foundation.shape.CircleShape
+                            shape = CircleShape
                         )
                 )
                 Text(text = label, fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = textColor)

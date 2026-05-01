@@ -52,6 +52,64 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".WidgetUpdateService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <receiver
+            android:name=".StatsWidgetReceiver"
+            android:exported="true"
+            android:label="Stats Raspberry"
+            android:icon="@drawable/ic_widget_stats">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/stats_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".PiHoleWidgetReceiver"
+            android:exported="true"
+            android:label="Pi-hole Status"
+            android:icon="@drawable/ic_widget_pihole">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/pihole_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".WireGuardWidgetReceiver"
+            android:exported="true"
+            android:label="WireGuard VPN"
+            android:icon="@drawable/ic_widget_wireguard">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/wireguard_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".SensorWidgetReceiver"
+            android:exported="true"
+            android:label="Capteurs Raspberry"
+            android:icon="@drawable/ic_widget_sensors">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sensor_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

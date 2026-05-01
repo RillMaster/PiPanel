@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">RaspberryController</string>
+    <string name="desc_widget_stats">Surveillance CPU, RAM et Température en temps réel.</string>
+    <string name="desc_widget_pihole">Contrôle rapide et statistiques de blocage Pi-hole.</string>
+    <string name="desc_widget_wireguard">Activer/Désactiver le VPN WireGuard et voir les clients.</string>
+    <string name="desc_widget_sensors">Affichage des sondes DS18B20 et DHT22.</string>
 </resources>

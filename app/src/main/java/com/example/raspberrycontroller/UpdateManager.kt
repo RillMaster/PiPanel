@@ -113,7 +113,7 @@ class UpdateManager(private val context: Context) {
         val uri: Uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
-            file
+            file,
         )
 
         val intent = Intent(Intent.ACTION_VIEW).apply {

@@ -35,7 +35,7 @@ data class DiskPartition(
     val totalMb    : Long,
     val usedMb     : Long,
     val availMb    : Long,
-    val usedPercent: Int
+    val usedPercent: Int,
 )
 
 data class ExtendedStats(
@@ -134,6 +134,7 @@ suspend fun fetchExtendedStats(settings: SettingsManager): ExtendedStats? =
 
             val disks = sections.getOrNull(1)
                 ?.lines()
+                ?.asSequence()
                 ?.filter { it.isNotBlank() }
                 ?.mapNotNull { line ->
                     val p = line.trim().split(Regex("\\s+"))
@@ -147,7 +148,7 @@ suspend fun fetchExtendedStats(settings: SettingsManager): ExtendedStats? =
                             usedPercent = p[4].trimEnd('%').toIntOrNull() ?: 0
                         )
                     } else null
-                } ?: emptyList()
+                }?.toList() ?: emptyList()
 
             ExtendedStats(base, gpuTemp, disks)
         } catch (_: Exception) {
@@ -161,10 +162,10 @@ suspend fun fetchExtendedStats(settings: SettingsManager): ExtendedStats? =
 
 @Composable
 fun SparklineChart(
+    modifier: Modifier = Modifier,
     values  : List<Float>,
     color   : Color,
     maxValue: Float = 100f,
-    modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
         if (values.size < 2) return@Canvas
@@ -172,8 +173,8 @@ fun SparklineChart(
         val h    = size.height
         val step = w / (MAX_HISTORY - 1).toFloat()
 
-        fun xAt(i: Int) = (MAX_HISTORY - values.size + i) * step
-        fun yAt(v: Float) = h - (v / maxValue).coerceIn(0f, 1f) * h
+        fun xAt(i: Int) = ((MAX_HISTORY - values.size) + i) * step
+        fun yAt(v: Float) = h - ((v / maxValue).coerceIn(0f, 1f) * h)
 
         val fillPath = Path().apply {
             moveTo(xAt(0), h)
@@ -342,8 +343,8 @@ fun MonitoringScreen(settings: SettingsManager, onClose: () -> Unit) {
     val tempHistory = remember { mutableStateListOf<Float>() }
 
     var current by remember { mutableStateOf<ExtendedStats?>(null) }
-    var loading by remember { mutableStateOf(true) }
-    var error   by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(value = true) }
+    var error   by remember { mutableStateOf(value = false) }
 
     LaunchedEffect(Unit) {
         while (true) {

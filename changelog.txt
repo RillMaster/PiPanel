@@ -1,7 +1,0 @@
-🔔 Push Notifications
-
-Alert if RAM or CPU usage exceeds a defined threshold
-
-Alert if the Pi becomes unreachable (watchdog timer)
-
-Notification when a Docker service fails

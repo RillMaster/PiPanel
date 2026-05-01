@@ -1,7 +1,7 @@
 package com.example.raspberrycontroller
 
 import android.content.Intent
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,8 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,12 +51,12 @@ private enum class OnboardingStep {
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 fun OnboardingScreen(
-    activity  : FragmentActivity,
+    @Suppress("unused") activity: FragmentActivity,
     settings  : SettingsManager,
-    onFinished: () -> Unit
+    onFinished: () -> Unit,
 ) {
     var step         by remember { mutableStateOf(OnboardingStep.WELCOME) }
-    var useWireGuard by remember { mutableStateOf(false) }
+    var useWireGuard by remember { mutableStateOf(value = false) }
 
     var host     by remember { mutableStateOf(settings.host.ifEmpty { "" }) }
     var port     by remember { mutableStateOf(if (settings.port != 0) settings.port.toString() else "22") }
@@ -109,17 +107,15 @@ fun OnboardingScreen(
             ) { currentStep ->
                 when (currentStep) {
 
-                    OnboardingStep.WELCOME -> WelcomeStep(
-                        onNext = { step = OnboardingStep.NETWORK }
-                    )
+                    OnboardingStep.WELCOME -> WelcomeStep { step = OnboardingStep.NETWORK }
 
                     OnboardingStep.NETWORK -> NetworkStep(
                         useWireGuard = useWireGuard,
                         onToggleWg   = { useWireGuard = it },
                         onBack       = { step = OnboardingStep.WELCOME },
                         onNext       = {
-                            if (useWireGuard) step = OnboardingStep.WIREGUARD
-                            else              step = OnboardingStep.SSH_CONFIG
+                            step = if (useWireGuard) OnboardingStep.WIREGUARD
+                            else              OnboardingStep.SSH_CONFIG
                         }
                     )
 
@@ -130,7 +126,7 @@ fun OnboardingScreen(
                             val launchIntent = context.packageManager
                                 .getLaunchIntentForPackage(WG_PACKAGE)
                             if (launchIntent != null) context.startActivity(launchIntent)
-                            else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(WG_PLAY)))
+                            else context.startActivity(Intent(Intent.ACTION_VIEW, WG_PLAY.toUri()))
                         }
                     )
 
@@ -191,7 +187,7 @@ fun OnboardingScreen(
 // Indicateurs de progression
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
-private fun StepIndicator(current: Int, total: Int) {
+private fun StepIndicator(current: Int, @Suppress("SameParameterValue") total: Int) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment     = Alignment.CenterVertically

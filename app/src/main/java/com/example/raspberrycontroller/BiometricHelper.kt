@@ -12,19 +12,17 @@ object BiometricHelper {
     /**
      * Vérifie si la biométrie (ou code PIN en fallback) est disponible sur l'appareil.
      */
+    @Suppress("unused")
     fun isAvailable(activity: FragmentActivity): Boolean {
         val manager = BiometricManager.from(activity)
-        return when (manager.canAuthenticate(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)) {
-            BiometricManager.BIOMETRIC_SUCCESS -> true
-            else -> false
-        }
+        return manager.canAuthenticate(BIOMETRIC_STRONG or DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     /**
      * Affiche la boîte de dialogue d'authentification biométrique.
      * Fallback automatique sur le code PIN / schéma si la biométrie échoue.
      *
-     * @param activity    L'activité hôte (doit être un FragmentActivity)
+     * @param activity    L'activité hôte (doit être un FragmentActivity).
      * @param onSuccess   Appelé si l'authentification réussit
      * @param onError     Appelé avec un message d'erreur (hors annulation volontaire)
      */

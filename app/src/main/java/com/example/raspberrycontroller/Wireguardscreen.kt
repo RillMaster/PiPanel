@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,7 +28,6 @@ private val WgGreen  = Color(0xFF4CAF50)
 private val WgBlue   = Color(0xFF2196F3)
 private val WgOrange = Color(0xFFFF9800)
 private val WgGrey   = Color(0xFF9E9E9E)
-private val WgRed    = Color(0xFFEF5350)
 
 // ── Modèles de données ────────────────────────────────────────────────────────
 data class WgPeer(
@@ -114,7 +114,7 @@ for p in peers:
 "
 """.trimIndent()
 
-private suspend fun fetchWgStatus(settings: SettingsManager): WgStatus? {
+internal suspend fun fetchWgStatus(settings: SettingsManager): WgStatus? {
     return try {
         val raw = SshClient.execute(
             settings.host, settings.port, settings.username, settings.password,
@@ -156,25 +156,33 @@ private suspend fun fetchWgStatus(settings: SettingsManager): WgStatus? {
         }
 
         // Vérifie si l'interface est up
-        val isUp = SshClient.execute(
+        val isUp = (SshClient.execute(
             settings.host, settings.port, settings.username, settings.password,
-            "ip link show ${ifaceName} 2>/dev/null | grep -c 'state UP' || echo 0",
+            "ip link show $ifaceName 2>/dev/null | grep -c 'state UP' || echo 0",
             settings.sshTimeoutMs
-        ).trim().toIntOrNull() ?: 0 > 0
+        ).trim().toIntOrNull() ?: 0) > 0
 
         WgStatus(ifaceName, isUp || peers.isNotEmpty(), pubKey, port, peers)
     } catch (_: Exception) { null }
 }
 
-private suspend fun toggleWireGuard(settings: SettingsManager, ifaceName: String, enable: Boolean): Boolean {
+internal suspend fun toggleWireGuard(settings: SettingsManager, ifaceName: String, enable: Boolean): Boolean {
     return try {
-        val cmd = if (enable) "sudo wg-quick up $ifaceName" else "sudo wg-quick down $ifaceName"
+        val sshEsc = settings.password.replace("'", "'\\''")
+        val cmd = if (enable) "sudo -S wg-quick up $ifaceName" else "sudo -S wg-quick down $ifaceName"
+        val fullCmd = "echo '$sshEsc' | $cmd && echo 'toggle_ok'"
+
         val result = SshClient.execute(
             settings.host, settings.port, settings.username, settings.password,
-            cmd, settings.sshTimeoutMs
-        )
-        result.isNotBlank() && !result.contains("Error", ignoreCase = true)
-    } catch (_: Exception) { false }
+            fullCmd, settings.sshTimeoutMs
+        ).trim()
+
+        android.util.Log.e("WireGuard", "Toggle result: $result")
+        result.contains("toggle_ok")
+    } catch (e: Exception) {
+        android.util.Log.e("WireGuard", "Toggle exception: ${e.message}")
+        false
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -245,7 +253,7 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Retour")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
                 },
                 actions = {

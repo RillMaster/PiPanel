@@ -48,7 +48,7 @@ fun PiHoleConfigScreen(
     var piPassword   by remember { mutableStateOf(settings.piHolePassword) }
     var showPassword by remember { mutableStateOf(false) }
     var autoRefresh  by remember { mutableStateOf(settings.piHoleAutoRefresh) }
-    var refreshDelay by remember { mutableStateOf(settings.piHoleRefreshDelaySec) }
+    var refreshDelay by remember { mutableIntStateOf(settings.piHoleRefreshDelaySec) }
     var testState    by remember { mutableStateOf<PiHoleTestState>(PiHoleTestState.Idle) }
     var debugInfo    by remember { mutableStateOf<String?>(null) }
 

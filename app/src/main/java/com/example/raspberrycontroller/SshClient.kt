@@ -13,7 +13,7 @@ import java.io.OutputStream
 
 class ShellSession(
     private val session: Session,
-    private val channel: ChannelShell
+    private val channel: ChannelShell,
 ) {
     private val writer: BufferedWriter = channel.outputStream.bufferedWriter(Charsets.UTF_8)
 
@@ -24,6 +24,7 @@ class ShellSession(
     val isConnected get() = channel.isConnected && !channel.isClosed
 
     /** Envoie une commande texte suivie d'un retour à la ligne. */
+    @Suppress("unused")
     suspend fun send(command: String) = withContext(Dispatchers.IO) {
         runCatching {
             writer.write(command + "\n")
@@ -57,30 +58,30 @@ object SshClient {
     fun parseError(e: Throwable): String {
         val msg = e.message ?: "Erreur inconnue"
         return when {
-            e is JSchException && (msg.contains("Auth fail", ignoreCase = true)
+            (e is JSchException) && (msg.contains("Auth fail", ignoreCase = true)
                     || msg.contains("auth cancel", ignoreCase = true)) ->
                 "❌ Authentification échouée — vérifiez identifiant / mot de passe"
 
-            e is JSchException && (msg.contains("UnknownHost", ignoreCase = true)
+            (e is JSchException) && (msg.contains("UnknownHost", ignoreCase = true)
                     || msg.contains("unable to resolve", ignoreCase = true)
                     || msg.contains("nodename nor servname", ignoreCase = true)) ->
-                "🌐 Hôte introuvable — vérifiez l'adresse IP (${msg})"
+                "🌐 Hôte introuvable — vérifiez l'adresse IP ($msg)"
 
-            e is JSchException && (msg.contains("timeout", ignoreCase = true)
+            (e is JSchException) && (msg.contains("timeout", ignoreCase = true)
                     || msg.contains("timed out", ignoreCase = true)) ->
                 "⏱️ Délai dépassé — hôte éteint ou port fermé ?"
 
-            e is JSchException && msg.contains("Connection refused", ignoreCase = true) ->
+            (e is JSchException) && msg.contains("Connection refused", ignoreCase = true) ->
                 "🚫 Connexion refusée — SSH est-il activé sur le Raspberry Pi ?"
 
-            e is JSchException && msg.contains("No route to host", ignoreCase = true) ->
+            (e is JSchException) && msg.contains("No route to host", ignoreCase = true) ->
                 "📡 Hôte inaccessible — êtes-vous sur le même réseau Wi-Fi ?"
 
-            e is JSchException && (msg.contains("Connection reset", ignoreCase = true)
+            (e is JSchException) && (msg.contains("Connection reset", ignoreCase = true)
                     || msg.contains("Broken pipe", ignoreCase = true)) ->
                 "🔌 Connexion interrompue — le Raspberry Pi a fermé la session"
 
-            e is JSchException && msg.contains("channel is not opened", ignoreCase = true) ->
+            (e is JSchException) && msg.contains("channel is not opened", ignoreCase = true) ->
                 "⚠️ Canal fermé — la session a expiré, reconnectez-vous"
 
             msg.contains("ECONNREFUSED", ignoreCase = true) ->
@@ -101,15 +102,18 @@ object SshClient {
         user: String,
         password: String,
         command: String,
-        timeoutMs: Int = 8000
+        timeoutMs: Int = 8000,
     ): String = withContext(Dispatchers.IO) {
+        android.util.Log.e("SSH", "SSH: Tentative connexion $host:$port ($user)...")
         try {
             val jsch = JSch()
             val session = jsch.getSession(user, host, port)
+            @Suppress("DEPRECATION")
             session.setPassword(password)
             session.setConfig("StrictHostKeyChecking", "no")
             session.connect(timeoutMs)
 
+            android.util.Log.e("SSH", "SSH: Connecté ! Exécution: ${command.take(60)}...")
             val channel = session.openChannel("exec") as ChannelExec
             channel.setCommand(command)
             val stdout = channel.inputStream
@@ -129,18 +133,21 @@ object SshClient {
                     val n = stderr.read(buffer)
                     if (n > 0) output.append("[err] ${String(buffer, 0, n, Charsets.UTF_8)}")
                 }
-                if (channel.isClosed && stdout.available() == 0) break
+                if ((channel.isClosed) && (stdout.available() == 0)) break
                 Thread.sleep(100)
             }
 
             channel.disconnect()
             session.disconnect()
 
-            // ✅ CORRIGÉ : on retourne "" si vide, MainActivity gère ce cas
-            output.toString().trim()
+            val result = output.toString().trim()
+            android.util.Log.e("SSH", "SSH: Terminé. Sortie=${if (result.length > 50) result.take(50) + "..." else result}")
+            result
 
         } catch (e: Exception) {
-            parseError(e)
+            val errorMsg = parseError(e)
+            android.util.Log.e("SSH", "SSH: ERREUR - $errorMsg")
+            errorMsg
         }
     }
 
@@ -149,11 +156,12 @@ object SshClient {
         host: String,
         port: Int = 22,
         user: String,
-        password: String
+        password: String,
     ): Result<ShellSession> = withContext(Dispatchers.IO) {
         runCatching {
             val jsch = JSch()
             val session = jsch.getSession(user, host, port)
+            @Suppress("DEPRECATION")
             session.setPassword(password)
             session.setConfig("StrictHostKeyChecking", "no")
             session.connect(8000)

@@ -104,57 +104,53 @@ PYEOF
 }
 
 @Suppress("SpellCheckingInspection")
-private fun buildToggleScript(password: String, enable: Boolean): String {
-    val esc = password.replace("\\", "\\\\").replace("'", "\\'")
-    // FIX : Python utilise True/False (majuscule), pas true/false
-    val action = if (enable) "True" else "False"
+internal fun buildToggleScript(settings: SettingsManager, enable: Boolean): String {
+    val sshEsc = settings.password.replace("'", "'\\''")
+    val piEsc  = settings.piHolePassword.replace("\\", "\\\\").replace("'", "\\'")
+    val pythonBool = if (enable) "True" else "False"
+    val cliCmd = if (enable) "enable" else "disable"
 
-    return """python3 << 'PYEOF'
-import urllib.request, json
-
-base = 'http://localhost/api'
-pwd  = '$esc'
-
-def post(path, data):
-    req = urllib.request.Request(
-        base + path,
-        data=json.dumps(data).encode(),
-        headers={'Content-Type': 'application/json'}
-    )
-    return json.loads(urllib.request.urlopen(req, timeout=5).read())
-
+    return """python3 << 'PYEOF' || (echo '$sshEsc' | sudo -S pihole $cliCmd && echo 'toggle_ok')
+import urllib.request, json, sys
 try:
-    auth = post('/auth', {'password': pwd})
-    session = auth.get('session', {})
-
-    sid  = session.get('sid')
-    csrf = session.get('csrf')
-    valid = session.get('valid', False)
-
-    if not valid or not sid or not csrf:
-        print('error|auth_failed')
-        exit(1)
-
-    req = urllib.request.Request(
-        base + '/dns/blocking',
-        data=json.dumps({'blocking': $action}).encode(),
-        headers={
-            'Content-Type': 'application/json',
-            'X-FTL-SID': sid,
-            'X-FTL-CSRF': csrf
-        }
-    )
-
-    res = urllib.request.urlopen(req, timeout=5).read().decode()
-    print('ok|' + res)
-
+    base = 'http://localhost/api'
+    pwd  = '$piEsc'
+    
+    auth_data = json.dumps({'password': pwd}).encode()
+    auth_req = urllib.request.Request(base + '/auth', data=auth_data, headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(auth_req, timeout=5) as r:
+        auth = json.loads(r.read())
+    
+    sid = auth.get('session', {}).get('sid')
+    csrf = auth.get('session', {}).get('csrf')
+    
+    if sid and csrf:
+        toggle_data = json.dumps({'blocking': $pythonBool}).encode()
+        toggle_req = urllib.request.Request(
+            base + '/dns/blocking',
+            data=toggle_data,
+            method='POST',
+            headers={
+                'Content-Type': 'application/json',
+                'X-FTL-SID': sid,
+                'X-FTL-CSRF': csrf
+            }
+        )
+        with urllib.request.urlopen(toggle_req, timeout=5) as r:
+            res = r.read().decode()
+        print('API_V6_OK|' + res)
+        print('toggle_ok')
+        sys.exit(0)
+    else:
+        print('API_V6_AUTH_FAILED')
 except Exception as e:
-    print('error|' + str(e))
+    print('API_V6_EXCEPTION:' + str(e))
+sys.exit(1)
 PYEOF
 """
 }
 
-suspend fun fetchPiHoleStatus(settings: SettingsManager, password: String): PiHoleStats? {
+internal suspend fun fetchPiHoleStatus(settings: SettingsManager, password: String): PiHoleStats? {
     return try {
         val raw = SshClient.execute(
             settings.host, settings.port, settings.username, settings.password,
@@ -166,14 +162,19 @@ suspend fun fetchPiHoleStatus(settings: SettingsManager, password: String): PiHo
     } catch (_: Exception) { null }
 }
 
-suspend fun togglePiHole(settings: SettingsManager, password: String, enable: Boolean): Boolean {
+internal suspend fun togglePiHole(settings: SettingsManager, enable: Boolean): Boolean {
     return try {
+        val script = buildToggleScript(settings, enable)
         val result = SshClient.execute(
             settings.host, settings.port, settings.username, settings.password,
-            buildToggleScript(password, enable), settings.sshTimeoutMs
+            script, settings.sshTimeoutMs
         ).trim()
-        result.startsWith("ok")
-    } catch (_: Exception) { false }
+        android.util.Log.e("PiHole", "Toggle result: $result")
+        result.contains("toggle_ok")
+    } catch (e: Exception) {
+        android.util.Log.e("PiHole", "Toggle exception: ${e.message}")
+        false
+    }
 }
 
 // FIX : Pi-hole v6 retourne "enabled"/"disabled", pas "true"/"false"
@@ -211,14 +212,14 @@ fun PiHoleScreen(
     val snackState = remember { SnackbarHostState() }
 
     // 🔥 ANTI-SPAM GLOBAL (IMPORTANT)
-    var lastRequestTime by remember { mutableStateOf(0L) }
-    val MIN_DELAY = 2500L
+    var lastRequestTime by remember { mutableLongStateOf(0L) }
+    val minDelay = 2500L
 
     fun refresh() {
         scope.launch {
 
             val now = System.currentTimeMillis()
-            if (now - lastRequestTime < MIN_DELAY) return@launch
+            if (now - lastRequestTime < minDelay) return@launch
             lastRequestTime = now
 
             loading = true
@@ -280,7 +281,7 @@ fun PiHoleScreen(
 
             if (settings.piHoleAutoRefresh &&
                 !toggling &&
-                now - lastRequestTime > MIN_DELAY) {
+                now - lastRequestTime > minDelay) {
 
                 lastRequestTime = now
 
@@ -394,7 +395,7 @@ fun PiHoleScreen(
                         onToggle = {
                             scope.launch {
                                 toggling = true
-                                val success = togglePiHole(settings, settings.piHolePassword, !s.enabled)
+                                val success = togglePiHole(settings, !s.enabled)
                                 if (success) {
                                     delay(1500)
                                     val newStats = fetchPiHoleStatus(settings, settings.piHolePassword)

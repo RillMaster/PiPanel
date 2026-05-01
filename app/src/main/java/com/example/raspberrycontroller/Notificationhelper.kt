@@ -33,6 +33,7 @@ object NotificationHelper {
         }
     }
 
+    @Suppress("unused")
     fun sendAlert(
         context: Context,
         channelId: String,
@@ -57,6 +58,10 @@ object NotificationHelper {
             .setAutoCancel(true)
             .build()
 
-        NotificationManagerCompat.from(context).notify(notifId++, notification)
+        try {
+            NotificationManagerCompat.from(context).notify(notifId++, notification)
+        } catch (_: SecurityException) {
+            // Permission POST_NOTIFICATIONS non accordée
+        }
     }
 }
