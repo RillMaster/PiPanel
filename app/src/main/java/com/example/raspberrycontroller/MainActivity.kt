@@ -11,7 +11,9 @@ import android.os.Bundle
 import android.os.Build
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -32,7 +34,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -354,7 +358,31 @@ class MainActivity : FragmentActivity() {
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier            = Modifier.padding(40.dp)
                 ) {
-                    Text("🔒", fontSize = 56.sp)
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.logo),
+                            contentDescription = "Logo",
+                            modifier = Modifier.size(70.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .align(Alignment.BottomEnd)
+                                .offset(x = (-5).dp, y = (-5).dp)
+                                .background(MaterialTheme.colorScheme.background, CircleShape)
+                                .padding(4.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Text("RaspberryController", style = MaterialTheme.typography.headlineSmall)
                     Text(
                         "Authentification requise pour accéder à l'application.",
@@ -402,73 +430,87 @@ class MainActivity : FragmentActivity() {
             mutableStateOf(if (settings.isConfigured()) Screen.CONTROL else Screen.SETTINGS)
         }
 
-        when (currentScreen.value) {
-            Screen.SETTINGS -> SettingsScreen(
-                settings           = settings,
-                activity           = activity,
-                onThemeChanged     = onThemeChanged,
-                onBiometricEnabled = onBiometricEnabled,
-                onSave             = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.TERMINAL -> TerminalScreen(
-                settings = settings,
-                onClose  = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.DOCKER -> DockerScreen(
-                settings = settings,
-                onClose  = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.MONITORING -> MonitoringScreen(
-                settings = settings,
-                onClose  = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.PIHOLE_CONFIG -> PiHoleConfigScreen(
-                settings = settings,
-                onClose  = { currentScreen.value = Screen.CONTROL },
-                onSaved  = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.PIHOLE -> PiHoleScreen(
-                settings     = settings,
-                onClose      = { currentScreen.value = Screen.CONTROL },
-                onOpenConfig = { currentScreen.value = Screen.PIHOLE_CONFIG }
-            )
-            Screen.WIREGUARD -> WireGuardScreen(
-                settings = settings,
-                onClose  = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.NOTIFS -> NotificationSettingsScreen(
-                settings = settings,
-                onBack   = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.PWM -> PwmSliderScreen(
-                settings = settings,
-                onClose  = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.GPIO_PLANNER -> GpioScheduleScreen(
-                settings = settings,
-                onClose  = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.SENSORS -> SensorDashboardScreen(
-                settings = settings,
-                onClose  = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.ABOUT -> AboutScreen(
-                onBack = { currentScreen.value = Screen.CONTROL }
-            )
-            Screen.CONTROL -> ControlScreen(
-                settings              = settings,
-                onOpenSettings        = { currentScreen.value = Screen.SETTINGS },
-                onOpenTerminal        = { currentScreen.value = Screen.TERMINAL },
-                onOpenDocker          = { currentScreen.value = Screen.DOCKER },
-                onOpenMonitoring      = { currentScreen.value = Screen.MONITORING },
-                onOpenPiHole          = { currentScreen.value = Screen.PIHOLE },
-                onOpenWireGuard       = { currentScreen.value = Screen.WIREGUARD },
-                onOpenNotifSettings   = { currentScreen.value = Screen.NOTIFS },
-                onOpenPwmSlider       = { currentScreen.value = Screen.PWM },
-                onOpenGpioSchedule    = { currentScreen.value = Screen.GPIO_PLANNER },
-                onOpenSensorDashboard = { currentScreen.value = Screen.SENSORS },
-                onOpenAbout           = { currentScreen.value = Screen.ABOUT }
-            )
+        AnimatedContent(
+            targetState = currentScreen.value,
+            transitionSpec = {
+                if (targetState == Screen.CONTROL) {
+                    (slideInHorizontally { -it / 3 } + fadeIn())
+                        .togetherWith(slideOutHorizontally { it } + fadeOut())
+                } else {
+                    (slideInHorizontally { it } + fadeIn())
+                        .togetherWith(slideOutHorizontally { -it / 3 } + fadeOut())
+                }
+            },
+            label = "screen_transition"
+        ) { screen ->
+            when (screen) {
+                Screen.SETTINGS -> SettingsScreen(
+                    settings           = settings,
+                    activity           = activity,
+                    onThemeChanged     = onThemeChanged,
+                    onBiometricEnabled = onBiometricEnabled,
+                    onSave             = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.TERMINAL -> TerminalScreen(
+                    settings = settings,
+                    onClose  = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.DOCKER -> DockerScreen(
+                    settings = settings,
+                    onClose  = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.MONITORING -> MonitoringScreen(
+                    settings = settings,
+                    onClose  = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.PIHOLE_CONFIG -> PiHoleConfigScreen(
+                    settings = settings,
+                    onClose  = { currentScreen.value = Screen.CONTROL },
+                    onSaved  = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.PIHOLE -> PiHoleScreen(
+                    settings     = settings,
+                    onClose      = { currentScreen.value = Screen.CONTROL },
+                    onOpenConfig = { currentScreen.value = Screen.PIHOLE_CONFIG }
+                )
+                Screen.WIREGUARD -> WireGuardScreen(
+                    settings = settings,
+                    onClose  = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.NOTIFS -> NotificationSettingsScreen(
+                    settings = settings,
+                    onBack   = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.PWM -> PwmSliderScreen(
+                    settings = settings,
+                    onClose  = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.GPIO_PLANNER -> GpioScheduleScreen(
+                    settings = settings,
+                    onClose  = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.SENSORS -> SensorDashboardScreen(
+                    settings = settings,
+                    onClose  = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.ABOUT -> AboutScreen(
+                    onBack = { currentScreen.value = Screen.CONTROL }
+                )
+                Screen.CONTROL -> ControlScreen(
+                    settings              = settings,
+                    onOpenSettings        = { currentScreen.value = Screen.SETTINGS },
+                    onOpenTerminal        = { currentScreen.value = Screen.TERMINAL },
+                    onOpenDocker          = { currentScreen.value = Screen.DOCKER },
+                    onOpenMonitoring      = { currentScreen.value = Screen.MONITORING },
+                    onOpenPiHole          = { currentScreen.value = Screen.PIHOLE },
+                    onOpenWireGuard       = { currentScreen.value = Screen.WIREGUARD },
+                    onOpenNotifSettings   = { currentScreen.value = Screen.NOTIFS },
+                    onOpenPwmSlider       = { currentScreen.value = Screen.PWM },
+                    onOpenGpioSchedule    = { currentScreen.value = Screen.GPIO_PLANNER },
+                    onOpenSensorDashboard = { currentScreen.value = Screen.SENSORS },
+                    onOpenAbout           = { currentScreen.value = Screen.ABOUT }
+                )
+            }
         }
     }
 
@@ -513,12 +555,16 @@ class MainActivity : FragmentActivity() {
             ) {
                 Box(
                     modifier = Modifier
-                        .size(100.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
+                        .size(110.dp)
+                        .clip(RoundedCornerShape(20.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("🍓", fontSize = 50.sp)
+                    Image(
+                        painter = painterResource(id = R.drawable.logo),
+                        contentDescription = "Logo",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
                 }
 
                 Text(
@@ -1143,33 +1189,30 @@ class MainActivity : FragmentActivity() {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primaryContainer,
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                                    )
-                                )
-                            )
-                            .padding(horizontal = 20.dp, vertical = 24.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(horizontal = 20.dp, vertical = 32.dp)
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            // Avatar / icône Pi
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // Logo en image
                             Box(
                                 modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("🍓", fontSize = 26.sp)
+                                Image(
+                                    painter = painterResource(id = R.drawable.logo),
+                                    contentDescription = "App Logo",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
                                     text       = "Raspberry Controller",
                                     style      = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color      = MaterialTheme.colorScheme.onPrimaryContainer
+                                    color      = MaterialTheme.colorScheme.onSurface
                                 )
                                 Row(
                                     verticalAlignment     = Alignment.CenterVertically,
@@ -1182,24 +1225,14 @@ class MainActivity : FragmentActivity() {
                                             .clip(CircleShape)
                                             .background(
                                                 if (systemStats != null) Color(0xFF4CAF50)
-                                                else Color(0xFF9E9E9E)
+                                                else Color(0xFFBDBDBD)
                                             )
                                     )
                                     Text(
                                         text       = "${settings.username}@${settings.host}",
                                         style      = MaterialTheme.typography.bodySmall,
                                         fontFamily = FontFamily.Monospace,
-                                        color      = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
-                                    )
-                                }
-                                // Mini stats en ligne si disponibles
-                                if (systemStats != null) {
-                                    val s = systemStats!!
-                                    Text(
-                                        text = "%.1f°C  ·  CPU ${s.cpuPercent}%%  ·  RAM ${s.ramUsedMb} Mo".format(s.tempCelsius),
-                                        style      = MaterialTheme.typography.labelSmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color      = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+                                        color      = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -1430,7 +1463,6 @@ class MainActivity : FragmentActivity() {
         item   : Any,
         onClick: () -> Unit
     ) {
-        // On utilise la réflexion pour accéder aux propriétés de la data class DrawerItem
         val clazz  = item::class
         val labelV  = clazz.members.firstOrNull { it.name == "label"  }?.call(item) as? String      ?: ""
         val iconV   = clazz.members.firstOrNull { it.name == "icon"   }?.call(item) as? ImageVector
@@ -1440,16 +1472,16 @@ class MainActivity : FragmentActivity() {
             icon = {
                 if (iconV != null) {
                     Surface(
-                        shape    = RoundedCornerShape(8.dp),
-                        color    = colorV.copy(alpha = 0.13f),
-                        modifier = Modifier.size(32.dp)
+                        shape    = RoundedCornerShape(10.dp),
+                        color    = colorV.copy(alpha = 0.12f),
+                        modifier = Modifier.size(38.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector        = iconV,
                                 contentDescription = labelV,
                                 tint               = colorV,
-                                modifier           = Modifier.size(17.dp)
+                                modifier           = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -1459,12 +1491,16 @@ class MainActivity : FragmentActivity() {
                 Text(
                     text       = labelV,
                     style      = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    modifier   = Modifier.padding(start = 8.dp)
                 )
             },
             selected = false,
             onClick  = onClick,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 1.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            colors = NavigationDrawerItemDefaults.colors(
+                unselectedContainerColor = Color.Transparent
+            )
         )
     }
 
