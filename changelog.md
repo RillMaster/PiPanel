@@ -1,50 +1,27 @@
-**🚀 Release Notes - Raspberry Controller**
+🚀 WireGuard Management Update
+This update provides a complete management interface for your WireGuard tunnels on Raspberry Pi.
 
+✨ New Features:
+• Full Peer Management: You can now add, rename, and delete WireGuard clients directly from the application.
 
+• Name Identification: Custom client names are now persistent. They are stored and read via comments (# Name) directly in the /etc/wireguard/wg0.conf file.
 
-*✨ New Features*
+Smart Configuration: When creating a client, the application automatically generates the private key, public key, and assigns the next available IP address.
 
-•Pi-hole v6 Support: Full integration of the new Pi-hole v6 API (secure management of SID/CSRF sessions).
+• Custom Port Support: Improved endpoint management to support specific ports (useful for NAT/port forwarding).
 
+🛠 Technical Improvements:
 
+Optimized Python Scripts: Use remote Python scripts to manipulate configuration files without risk of corruption.
 
-• New "About" Screen: Added a dedicated section with developer information (RillMaster), a link to the GitHub repository, and the current application version.
+• SSH Robustness: Fixed variable interpolation errors in remote commands.
 
+• Hot Restart: After each modification (addition/deletion), the WireGuard service is cleanly restarted to apply the changes without losing the configuration.
 
+🎨 Interface & UX:
 
-*🎨 Interface \& Widgets*
+• Loading Overlay: Added a progress screen when restarting WireGuard to prevent simultaneous actions.
 
-• Widget Visual Redesign:
+• Visual Feedback: Notifications (Snackbar) to confirm successful operations (renaming, deletion, etc.).
 
-◦ Modernized design with rounded corners (16dp) and translucent backgrounds.
-
-
-
-◦ Status indicators are now perfect circles for improved aesthetics.
-
-
-
-• Improved Previews: The widget selector now displays a true preview of how the widgets will look (Stats, Pi-hole, WireGuard, Sensors).
-
-
-
-• Toggle Optimization: Redesigned the button system for widgets to ensure immediate responsiveness with each click.
-
-
-
-*🛠️ Technical Improvements \& Fixes*
-
-• SSH Stability: Improved script execution on the Raspberry Pi using Heredocs Python, preventing errors related to special characters in passwords.
-
-
-
-• Widget Reliability: Added a temporary lock after a manual action to prevent background updates from causing visual conflicts.
-
-
-
-• Code Cleanup: Updated system icons to AutoMirrored versions and fixed various import bugs.
-
-
-
-• Advanced Logs: Improved the diagnostic system to facilitate troubleshooting SSH connection issues.
-
+• Real-Time Statistics: Improved monitoring of traffic (upload/download) and client connection status.
