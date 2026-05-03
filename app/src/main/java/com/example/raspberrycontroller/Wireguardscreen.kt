@@ -51,50 +51,59 @@ data class WgStatus(
 // ── Scripts SSH ──────────────────────────────────────────────────────────────
 private val WG_STATUS_SCRIPT = """
 python3 -c "
-import subprocess, re, time
+import subprocess, re, time, os
 
 try:
     out = subprocess.check_output(['sudo', 'wg', 'show', 'all', 'dump'], text=True, stderr=subprocess.DEVNULL)
+    
+    peer_names = {}
+    ifaces = set()
+    lines = [l.strip() for l in out.strip().split('\n') if l.strip()]
+    for line in lines:
+        parts = line.split('\t')
+        if parts: ifaces.add(parts[0])
+    
+    for iface in ifaces:
+        try:
+            conf = subprocess.check_output(['sudo', 'cat', f'/etc/wireguard/{iface}.conf'], text=True, stderr=subprocess.DEVNULL)
+            parts = re.split(r'(\[Peer\])', conf, flags=re.IGNORECASE)
+            for i in range(1, len(parts), 2):
+                body = parts[i+1]
+                pub_match = re.search(r'PublicKey\s*=\s*(.*?)\n', body, re.IGNORECASE)
+                if pub_match:
+                    pub = pub_match.group(1).strip()
+                    name_match = re.search(r'#\s*(.*?)\n', body)
+                    name = name_match.group(1).strip() if name_match else ''
+                    if not name:
+                        prev_part = parts[i-1].strip().split('\n')
+                        if prev_part and prev_part[-1].strip().startswith('#'):
+                            name = prev_part[-1].strip()[1:].strip()
+                    if pub: peer_names[pub] = name
+        except: pass
+
+    now = int(time.time())
+    for line in lines:
+        parts = line.split('\t')
+        if len(parts) == 5 and parts[0] != 'off':
+            print('IFACE:' + parts[0] + ':' + parts[2] + ':' + parts[3])
+        elif len(parts) == 9:
+            peer_pub = parts[1]
+            name = peer_names.get(peer_pub, '')
+            endpoint = parts[3] if parts[3] != '(none)' else ''
+            allowed  = parts[4]
+            try:
+                hs = int(parts[5])
+                age_s = now - hs
+                if hs == 0: hs_str = 'Jamais'; online = False
+                elif age_s < 60: hs_str = str(age_s) + 's'; online = True
+                elif age_s < 3600: hs_str = str(age_s // 60) + 'min'; online = age_s < 180
+                else: hs_str = str(age_s // 3600) + 'h'; online = False
+            except: hs_str = '?'; online = False
+            try: rx = int(parts[6]); tx = int(parts[7])
+            except: rx = 0; tx = 0
+            print('PEER:' + name + '|' + peer_pub + '|' + endpoint + '|' + allowed + '|' + hs_str + '|' + str(rx) + '|' + str(tx) + '|' + str(1 if online else 0))
 except Exception as e:
     print('ERROR:' + str(e))
-    exit()
-
-lines = [l.strip() for l in out.strip().split('\n') if l.strip()]
-if not lines:
-    print('NO_INTERFACE')
-    exit()
-
-iface_name = ''
-pub_key = ''
-port = 0
-peers = []
-now = int(time.time())
-
-for line in lines:
-    parts = line.split('\t')
-    if len(parts) == 5 and parts[0] != 'off':
-        iface_name = parts[0]
-        pub_key = parts[2]
-        try: port = int(parts[3])
-        except: port = 0
-    elif len(parts) == 9:
-        peer_pub = parts[1]
-        endpoint = parts[3] if parts[3] != '(none)' else ''
-        allowed  = parts[4]
-        try:
-            hs = int(parts[5])
-            age_s = now - hs
-            if hs == 0: hs_str = 'Jamais'; online = False
-            elif age_s < 60: hs_str = str(age_s) + 's'; online = True
-            elif age_s < 3600: hs_str = str(age_s // 60) + 'min'; online = age_s < 180
-            else: hs_str = str(age_s // 3600) + 'h'; online = False
-        except: hs_str = '?'; online = False
-        try: rx = int(parts[6]); tx = int(parts[7])
-        except: rx = 0; tx = 0
-        peers.append(peer_pub[:8] + '|' + peer_pub + '|' + endpoint + '|' + allowed + '|' + hs_str + '|' + str(rx) + '|' + str(tx) + '|' + str(1 if online else 0))
-
-print('IFACE:' + iface_name + ':' + pub_key + ':' + str(port))
-for p in peers: print('PEER:' + p)
 "
 """.trimIndent()
 
@@ -110,7 +119,10 @@ internal suspend fun fetchWgStatus(settings: SettingsManager): WgStatus? {
                 iface = p.getOrElse(0){"wg0"}; pub = p.getOrElse(1){""}; port = p.getOrElse(2){"51820"}.toIntOrNull() ?: 51820
             } else if (line.startsWith("PEER:")) {
                 val p = line.removePrefix("PEER:").split("|")
-                if (p.size >= 8) peers.add(WgPeer(p[0]+"…", p[1], p[2].ifBlank{"Jamais"}, p[3], p[4], p[5].toLongOrNull()?:0L, p[6].toLongOrNull()?:0L, p[7]=="1"))
+                if (p.size >= 8) {
+                    val name = p[0].ifBlank { p[1].take(8) + "…" }
+                    peers.add(WgPeer(name, p[1], p[2].ifBlank{"Jamais"}, p[3], p[4], p[5].toLongOrNull()?:0L, p[6].toLongOrNull()?:0L, p[7]=="1"))
+                }
             }
         }
         val isUp = (SshClient.execute(settings.host, settings.port, settings.username, settings.password, "ip link show $iface 2>/dev/null | grep -c 'state UP' || echo 0", settings.sshTimeoutMs).trim().toIntOrNull() ?: 0) > 0
@@ -120,18 +132,88 @@ internal suspend fun fetchWgStatus(settings: SettingsManager): WgStatus? {
 
 internal suspend fun toggleWireGuard(settings: SettingsManager, ifaceName: String, enable: Boolean): Boolean {
     val action = if (enable) "start" else "stop"
-    val cmd = "sudo systemctl $action wg-quick@$ifaceName"
+    val cmd = "systemctl $action wg-quick@$ifaceName"
+    val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "echo '${settings.password}' | sudo -S $cmd && echo 'ok'", settings.sshTimeoutMs).trim()
+    return res.split("\n").any { it.trim() == "ok" }
+}
+
+internal suspend fun restartWireGuard(settings: SettingsManager, ifaceName: String): Boolean {
+    val cmd = "systemctl restart wg-quick@$ifaceName"
     val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "echo '${settings.password}' | sudo -S $cmd && echo 'ok'", settings.sshTimeoutMs).trim()
     return res.split("\n").any { it.trim() == "ok" }
 }
 
 internal suspend fun deleteWgPeer(settings: SettingsManager, iface: String, pubKey: String): Boolean {
-    val cmd = "sudo wg set $iface peer $pubKey remove && sudo wg-quick save $iface"
-    val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "echo '${settings.password}' | sudo -S $cmd && echo 'ok'", settings.sshTimeoutMs).trim()
+    val script = """
+python3 -c "
+import sys, re, subprocess
+conf_path = f'/etc/wireguard/$iface.conf'
+try:
+    content = subprocess.check_output(['sudo', 'cat', conf_path], text=True)
+    sections = re.split(r'(\[Peer\])', content, flags=re.IGNORECASE)
+    new_parts = [sections[0]]
+    found = False
+    for i in range(1, len(sections), 2):
+        header = sections[i]
+        body = sections[i+1]
+        if '$pubKey' not in body:
+            new_parts.append(header)
+            new_parts.append(body)
+        else:
+            found = True
+    
+    if found:
+        new_content = ''.join(new_parts)
+        process = subprocess.Popen(['sudo', 'tee', conf_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
+        process.communicate(input=new_content)
+        subprocess.run(['sudo', 'wg', 'set', '$iface', 'peer', '$pubKey', 'remove'])
+        print('ok')
+    else:
+        print('NOT_FOUND')
+except Exception as e:
+    print('ERROR:' + str(e))
+"
+""".trimIndent()
+    val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, script, settings.sshTimeoutMs).trim()
     return res.split("\n").any { it.trim() == "ok" }
 }
 
-internal suspend fun addWgPeer(settings: SettingsManager, iface: String, dns: String, allowed: String): Result<String> {
+internal suspend fun renameWgPeer(settings: SettingsManager, iface: String, pubKey: String, newName: String): Boolean {
+    val script = """
+python3 -c "
+import sys, re, subprocess
+conf_path = f'/etc/wireguard/$iface.conf'
+try:
+    content = subprocess.check_output(['sudo', 'cat', conf_path], text=True)
+    sections = re.split(r'(\[Peer\])', content, flags=re.IGNORECASE)
+    new_parts = [sections[0]]
+    found = False
+    for i in range(1, len(sections), 2):
+        header = sections[i]
+        body = sections[i+1]
+        if '$pubKey' in body:
+            body = re.sub(r'^\s*#.*?\n', '', body, flags=re.MULTILINE)
+            body = f'\n# $newName\n' + body.lstrip()
+            found = True
+        new_parts.append(header)
+        new_parts.append(body)
+    
+    if found:
+        new_content = ''.join(new_parts)
+        process = subprocess.Popen(['sudo', 'tee', conf_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
+        process.communicate(input=new_content)
+        print('ok')
+    else:
+        print('NOT_FOUND')
+except Exception as e:
+    print('ERROR:' + str(e))
+"
+""".trimIndent()
+    val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, script, settings.sshTimeoutMs).trim()
+    return res.split("\n").any { it.trim() == "ok" }
+}
+
+internal suspend fun addWgPeer(settings: SettingsManager, iface: String, clientName: String, dns: String, allowed: String, endpointHost: String, endpointPort: Int): Result<String> {
     val script = """
 python3 -c "
 import subprocess, re, sys
@@ -139,7 +221,8 @@ def run(cmd): return subprocess.check_output(cmd, shell=True, text=True, stderr=
 try:
     priv = run('wg genkey')
     pub = run('echo ' + priv + ' | wg pubkey')
-    conf = run('echo \"${settings.password}\" | sudo -S cat /etc/wireguard/$iface.conf')
+    conf_path = f'/etc/wireguard/$iface.conf'
+    conf = run(f'echo \"${settings.password}\" | sudo -S cat {conf_path}')
     
     ips = re.findall(r'AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)', conf)
     last_ip = '10.0.0.1'
@@ -154,8 +237,13 @@ try:
             parts[-1] = str(next_octet)
             last_ip = '.'.join(parts)
     
-    run('echo \"${settings.password}\" | sudo -S wg set $iface peer ' + pub + ' allowed-ips ' + last_ip + '/32')
-    run('echo \"${settings.password}\" | sudo -S wg-quick save $iface')
+    peer_config = f'\n[Peer]\n# $clientName\nPublicKey = {pub}\nAllowedIPs = {last_ip}/32\n'
+    process = subprocess.Popen(['sudo', 'tee', '-a', conf_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
+    process.communicate(input=peer_config)
+    
+    # On applique en live
+    subprocess.run(['sudo', 'wg', 'set', '$iface', 'peer', pub, 'allowed-ips', f'{last_ip}/32'])
+
     print('OK|' + priv + '|' + pub + '|' + last_ip)
 except Exception as e:
     print('ERROR|' + str(e))
@@ -182,6 +270,9 @@ except Exception as e:
     val p = okLine.trim().split("|")
     val status = fetchWgStatus(settings) ?: return Result.failure(Exception("Impossible de récupérer le statut pour finaliser la config"))
     
+    // Si l'hôte contient déjà un port (ex: 1.2.3.4:5678), on ne rajoute pas le port par défaut
+    val finalEndpoint = if (endpointHost.contains(":")) endpointHost else "$endpointHost:$endpointPort"
+
     val config = """
 [Interface]
 PrivateKey = ${p[1]}
@@ -191,7 +282,7 @@ DNS = $dns
 [Peer]
 PublicKey = ${status.publicKey}
 AllowedIPs = $allowed
-Endpoint = ${settings.host}:${status.listenPort}
+Endpoint = $finalEndpoint
 PersistentKeepalive = 25
 """.trimIndent()
     
@@ -211,6 +302,7 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
     val snackState = remember { SnackbarHostState() }
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf<WgPeer?>(null) }
     var showConfigDialog by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
@@ -265,14 +357,25 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
                     }
                     Text("Clients (${s.peers.size})", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     s.peers.forEach { peer ->
-                        WgPeerCard(peer) {
+                        WgPeerCard(peer, onRename = { showRenameDialog = peer }) {
                             scope.launch {
+                                restarting = true
                                 if (deleteWgPeer(settings, s.interfaceName, peer.publicKey)) {
-                                    refresh(); snackMsg = "Client supprimé"
-                                } else snackMsg = "Erreur"
+                                    if (restartWireGuard(settings, s.interfaceName)) {
+                                        delay(1000)
+                                        refresh()
+                                        snackMsg = "Client supprimé et WireGuard redémarré"
+                                    } else {
+                                        snackMsg = "Client supprimé mais erreur au redémarrage"
+                                    }
+                                } else {
+                                    snackMsg = "Erreur lors de la suppression"
+                                }
+                                restarting = false
                             }
                         }
                     }
+
                 }
             }
 
@@ -303,15 +406,37 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
     }
 
     if (showAddDialog) {
-        AddPeerDialog(onDismiss = { showAddDialog = false }) { dns, allowed ->
+        AddPeerDialog(
+            defaultEndpoint = settings.host,
+            defaultPort = wgStatus?.listenPort ?: 51820,
+            onDismiss = { showAddDialog = false }
+        ) { name, dns, allowed, endpoint, port ->
             showAddDialog = false; loading = true
             scope.launch {
-                val result = addWgPeer(settings, wgStatus?.interfaceName ?: "wg0", dns, allowed)
+                val result = addWgPeer(settings, wgStatus?.interfaceName ?: "wg0", name, dns, allowed, endpoint, port)
                 result.onSuccess { config ->
                     showConfigDialog = config
                     refresh()
                 }.onFailure { 
                     snackMsg = it.message ?: "Erreur lors de la création"
+                }
+                loading = false
+            }
+        }
+    }
+
+    showRenameDialog?.let { peer ->
+        RenamePeerDialog(
+            currentName = peer.name,
+            onDismiss = { showRenameDialog = null }
+        ) { newName ->
+            showRenameDialog = null; loading = true
+            scope.launch {
+                if (renameWgPeer(settings, wgStatus?.interfaceName ?: "wg0", peer.publicKey, newName)) {
+                    refresh()
+                    snackMsg = "Client renommé"
+                } else {
+                    snackMsg = "Erreur lors du renommage"
                 }
                 loading = false
             }
@@ -331,35 +456,102 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
                     showConfigDialog = null
                     
                     scope.launch {
-                        val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        cb.setPrimaryClip(android.content.ClipData.newPlainText("WG Config", config))
-                        showConfigDialog = null
-                        
-                        // On rafraîchit juste pour voir le nouveau client
-                        // Pas de down/up car c'est déjà appliqué par 'wg set' dans addWgPeer
-                        refresh()
-                        snackMsg = "Config copiée. Client actif immédiatement."
+                        restarting = true
+                        if (restartWireGuard(settings, wgStatus?.interfaceName ?: "wg0")) {
+                            delay(1000)
+                            refresh()
+                            snackMsg = "Config copiée et WireGuard redémarré"
+                        } else {
+                            snackMsg = "Config copiée mais erreur au redémarrage"
+                        }
+                        restarting = false
                     }
                 }) { Text("Copier et Fermer") }
             }
+
         )
     }
 }
 
 @Composable
-fun AddPeerDialog(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
+fun AddPeerDialog(defaultEndpoint: String, defaultPort: Int, onDismiss: () -> Unit, onConfirm: (String, String, String, String, Int) -> Unit) {
+    var name by remember { mutableStateOf("") }
     var dns by remember { mutableStateOf("10.0.0.1") }
     var allowed by remember { mutableStateOf("0.0.0.0/0") }
+    var endpoint by remember { mutableStateOf(defaultEndpoint) }
+    var port by remember { mutableStateOf(defaultPort.toString()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Nouveau Client") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = dns, onValueChange = { dns = it }, label = { Text("DNS") })
-                OutlinedTextField(value = allowed, onValueChange = { allowed = it }, label = { Text("Allowed IPs (Client)") })
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nom du client") },
+                    placeholder = { Text("ex: Pc RillMaster") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = endpoint, 
+                    onValueChange = { endpoint = it }, 
+                    label = { Text("Endpoint (IP Publique ou DNS)") },
+                    placeholder = { Text("ex: 82.225.223.88") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = port,
+                    onValueChange = { if (it.all { char -> char.isDigit() }) port = it },
+                    label = { Text("Port de l'interface (Serveur)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = dns, 
+                    onValueChange = { dns = it }, 
+                    label = { Text("DNS") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = allowed, 
+                    onValueChange = { allowed = it }, 
+                    label = { Text("Allowed IPs (Client)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
-        confirmButton = { Button(onClick = { onConfirm(dns, allowed) }) { Text("Créer") } },
+        confirmButton = { 
+            Button(
+                onClick = { onConfirm(name, dns, allowed, endpoint, port.toIntOrNull() ?: defaultPort) },
+                enabled = endpoint.isNotEmpty() && port.isNotEmpty() && name.isNotEmpty()
+            ) { Text("Créer") } 
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+    )
+}
+
+@Composable
+fun RenamePeerDialog(currentName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var name by remember { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Modifier le nom") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Nouveau nom") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(name) }, enabled = name.isNotEmpty()) { Text("Enregistrer") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
     )
 }
@@ -397,7 +589,7 @@ private fun WgInterfaceCard(status: WgStatus, toggling: Boolean, onToggle: () ->
 }
 
 @Composable
-private fun WgPeerCard(peer: WgPeer, onDelete: () -> Unit) {
+private fun WgPeerCard(peer: WgPeer, onRename: () -> Unit, onDelete: () -> Unit) {
     val color = if (peer.isOnline) WgGreen else WgGrey
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -405,9 +597,10 @@ private fun WgPeerCard(peer: WgPeer, onDelete: () -> Unit) {
                 Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(color))
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(peer.publicKey.take(12) + "…", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text(peer.name, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     Text(if (peer.isOnline) "Actif · ${peer.lastHandshake}" else "Inactif · ${peer.lastHandshake}", style = MaterialTheme.typography.labelSmall, color = color)
                 }
+                IconButton(onClick = onRename) { Icon(Icons.Default.Edit, "Renommer", modifier = Modifier.size(20.dp)) }
                 IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Supprimer", tint = MaterialTheme.colorScheme.error) }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
