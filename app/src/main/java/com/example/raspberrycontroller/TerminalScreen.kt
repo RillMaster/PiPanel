@@ -35,6 +35,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -501,7 +502,7 @@ private data class EditorState(
 private fun SnippetDialog(
     initialLabel  : String = "",
     initialCommand: String = "",
-    title         : String = "Nouveau snippet",
+    title         : String = stringResource(R.string.snippet_new_title),
     onConfirm     : (label: String, command: String) -> Unit,
     onDelete      : (() -> Unit)? = null,
     onDismiss     : () -> Unit
@@ -519,7 +520,7 @@ private fun SnippetDialog(
                 OutlinedTextField(
                     value          = label,
                     onValueChange  = { label = it },
-                    label          = { Text("Nom affiché", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
+                    label          = { Text(stringResource(R.string.snippet_label_label), fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
                     singleLine     = true,
                     colors         = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor   = TerminalGreen,
@@ -535,7 +536,7 @@ private fun SnippetDialog(
                 OutlinedTextField(
                     value          = command,
                     onValueChange  = { command = it },
-                    label          = { Text("Commande", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
+                    label          = { Text(stringResource(R.string.snippet_command_label), fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
                     singleLine     = false,
                     minLines       = 2,
                     colors         = OutlinedTextFieldDefaults.colors(
@@ -555,17 +556,17 @@ private fun SnippetDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onDelete != null) {
                     TextButton(onClick = onDelete) {
-                        Text("Supprimer", color = Color(0xFFFF5555), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                        Text(stringResource(R.string.action_delete), color = Color(0xFFFF5555), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                     }
                 }
                 TextButton(onClick = onDismiss) {
-                    Text("Annuler", color = Color(0xFF888888), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                    Text(stringResource(R.string.action_cancel), color = Color(0xFF888888), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                 }
                 TextButton(
                     onClick  = { if (label.isNotBlank() && command.isNotBlank()) onConfirm(label.trim(), command.trim()) },
                     enabled  = label.isNotBlank() && command.isNotBlank()
                 ) {
-                    Text("OK", color = TerminalGreen, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                    Text(stringResource(R.string.action_ok), color = TerminalGreen, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                 }
             }
         }
@@ -577,7 +578,7 @@ private fun SnippetDialog(
 // ══════════════════════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
+fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: () -> Unit) {
     val scope          = rememberCoroutineScope()
     val context        = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -592,7 +593,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
 
     var rawInput    by remember { mutableStateOf(TextFieldValue(ghost)) }
     var session     by remember { mutableStateOf<ShellSession?>(null) }
-    var status      by remember { mutableStateOf("Connexion...") }
+    var status      by remember { mutableStateOf(context.getString(R.string.status_connecting)) }
     var isConnected by remember { mutableStateOf(false) }
 
     var userClosedManually by remember { mutableStateOf(false) }
@@ -773,7 +774,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
         )
         result.onSuccess { sh ->
             session          = sh
-            status           = "Connecté"
+            status           = context.getString(R.string.status_connected_terminal)
             isConnected      = true
             isReconnecting   = false
             reconnectAttempt = 0
@@ -803,8 +804,8 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                         if (reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
                             reconnectAttempt++
                             isReconnecting = true
-                            status = "Reconnexion ($reconnectAttempt/$MAX_RECONNECT_ATTEMPTS)..."
-                            emulator.process("\r\n\u001B[33m⚠ Connexion perdue — tentative $reconnectAttempt/$MAX_RECONNECT_ATTEMPTS dans ${RECONNECT_DELAY_MS / 1000} s...\u001B[0m\r\n")
+                            status = context.getString(R.string.status_reconnecting, reconnectAttempt, MAX_RECONNECT_ATTEMPTS)
+                            emulator.process("\r\n\u001B[33m" + context.getString(R.string.msg_connection_lost_retry, reconnectAttempt, MAX_RECONNECT_ATTEMPTS, RECONNECT_DELAY_MS / 1000) + "\u001B[0m\r\n")
                             renderTick++
                             scope.launch {
                                 delay(RECONNECT_DELAY_MS)
@@ -812,12 +813,12 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                             }
                         } else {
                             isReconnecting = false
-                            status = "Déconnecté"
-                            emulator.process("\r\n\u001B[31m✗ Reconnexion abandonnée après $MAX_RECONNECT_ATTEMPTS tentatives.\u001B[0m\r\n")
+                            status = context.getString(R.string.status_disconnected)
+                            emulator.process("\r\n\u001B[31m" + context.getString(R.string.msg_reconnect_failed, MAX_RECONNECT_ATTEMPTS) + "\u001B[0m\r\n")
                             renderTick++
                         }
                     } else {
-                        status = "Déconnecté"
+                        status = context.getString(R.string.status_disconnected)
                         onClose()
                     }
                 }
@@ -829,24 +830,24 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
             if (!userClosedManually && reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
                 reconnectAttempt++
                 isReconnecting = true
-                status = "Reconnexion ($reconnectAttempt/$MAX_RECONNECT_ATTEMPTS)..."
+                status = context.getString(R.string.status_reconnecting, reconnectAttempt, MAX_RECONNECT_ATTEMPTS)
                 emulator.process("\r\n\u001B[33m⚠ Échec — ${SshClient.parseError(err)}\u001B[0m\r\n")
-                emulator.process("\u001B[33m  Nouvelle tentative dans ${RECONNECT_DELAY_MS / 1000} s...\u001B[0m\r\n")
+                emulator.process("\u001B[33m  " + context.getString(R.string.msg_manual_reconnect) + "\u001B[0m\r\n")
                 renderTick++
                 delay(RECONNECT_DELAY_MS)
                 if (!userClosedManually) connectSsh()
             } else if (!userClosedManually) {
                 isReconnecting = false
-                status = "Erreur"
+                status = context.getString(R.string.status_error)
                 emulator.process(SshClient.parseError(err) + "\r\n")
-                emulator.process("Vérifiez les paramètres SSH.\r\n")
+                emulator.process(context.getString(R.string.msg_check_ssh_settings) + "\r\n")
                 renderTick++
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        emulator.process("Connexion à ${settings.host}:${settings.port}...\r\n")
+        emulator.process(context.getString(R.string.msg_connecting_to, settings.host, settings.port) + "\r\n")
         renderTick++
         connectSsh()
     }
@@ -866,7 +867,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
     if (showAddSnippet.value) {
         SnippetDialog(
             initialCommand = typedLine,
-            title          = "Ajouter un snippet",
+            title          = stringResource(R.string.snippet_add_title),
             onConfirm = { label, command ->
                 localShortcuts.add(label to command)
                 settings.shortcuts = localShortcuts.toList()
@@ -882,7 +883,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
         SnippetDialog(
             initialLabel   = el,
             initialCommand = ec,
-            title          = "Modifier le snippet",
+            title          = stringResource(R.string.snippet_edit_title),
             onConfirm = { label, command ->
                 localShortcuts[editIdx] = label to command
                 settings.shortcuts = localShortcuts.toList()
@@ -922,7 +923,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                 TopAppBar(
                     title = {
                         Column {
-                            Text("Terminal SSH", fontFamily = FontFamily.Monospace)
+                            Text(stringResource(R.string.terminal_title), fontFamily = FontFamily.Monospace)
                             Row(
                                 verticalAlignment     = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -938,13 +939,18 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                                     text  = status,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = when {
-                                        isConnected                        -> TerminalGreen
-                                        isReconnecting                     -> Color.Yellow
-                                        status.startsWith("Connexion")     -> Color.Yellow
-                                        else                               -> Color.Red
+                                        isConnected                                || status == context.getString(R.string.status_connected_terminal) -> TerminalGreen
+                                        isReconnecting                             || status.startsWith(context.getString(R.string.status_connecting).dropLast(3)) -> Color.Yellow
+                                        status.startsWith(context.getString(R.string.status_connecting).dropLast(3)) -> Color.Yellow
+                                        else                                       -> Color.Red
                                     }
                                 )
                             }
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu), tint = TerminalGreen)
                         }
                     },
                     actions = {
@@ -960,7 +966,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                         ) {
                             Icon(
                                 Icons.Default.ContentPaste,
-                                contentDescription = "Coller",
+                                contentDescription = stringResource(R.string.action_paste),
                                 tint = if (isConnected) TerminalGreen.copy(0.75f) else Color(0xFF3A3A3A)
                             )
                         }
@@ -968,20 +974,20 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                             IconButton(onClick = {
                                 reconnectAttempt   = 0
                                 userClosedManually = false
-                                status             = "Reconnexion..."
+                                status             = context.getString(R.string.status_connecting)
                                 isReconnecting     = true
-                                emulator.process("\r\n\u001B[33m↺ Reconnexion manuelle...\u001B[0m\r\n")
+                                emulator.process("\r\n\u001B[33m" + context.getString(R.string.msg_manual_reconnect) + "\u001B[0m\r\n")
                                 renderTick++
                                 scope.launch { connectSsh() }
                             }) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Reconnecter", tint = Color.Yellow)
+                                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_reconnect), tint = Color.Yellow)
                             }
                         }
                         if (isLandscape) {
                             IconButton(onClick = { showBars = !showBars }) {
                                 Icon(
                                     if (showBars) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                                    contentDescription = "Barres",
+                                    contentDescription = stringResource(R.string.action_bars),
                                     tint = TerminalGreen.copy(0.75f)
                                 )
                             }
@@ -989,7 +995,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                         IconButton(onClick = { toggleRotation() }) {
                             Icon(
                                 Icons.Default.ScreenRotation,
-                                contentDescription = "Rotation",
+                                contentDescription = stringResource(R.string.action_rotation),
                                 tint = if (isLandscape) TerminalGreen else TerminalGreen.copy(0.45f)
                             )
                         }
@@ -998,7 +1004,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                             session?.close()
                             onClose()
                         }) {
-                            Icon(Icons.Default.Close, contentDescription = "Fermer", tint = TerminalGreen)
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close), tint = TerminalGreen)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A1A1A))
@@ -1215,7 +1221,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                                     .padding(horizontal = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("＋ snippet", color = TerminalGreen.copy(0.6f), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                Text(stringResource(R.string.action_add_snippet), color = TerminalGreen.copy(0.6f), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                             }
                         }
                         items(suggestions) { suggestion ->
@@ -1321,7 +1327,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit) {
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text       = if (ctrlActive) "^ Ctrl actif — tapez une lettre" else "Alt actif — tapez une touche",
+                                text       = if (ctrlActive) stringResource(R.string.ctrl_active_msg) else stringResource(R.string.alt_active_msg),
                                 color      = Color(0xFFFCE94F),
                                 fontSize   = 10.sp,
                                 fontFamily = FontFamily.Monospace

@@ -9,13 +9,20 @@ import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricManager
 import android.os.Bundle
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,7 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -31,27 +38,35 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.raspberrycontroller.ui.theme.RaspberryControllerTheme
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import kotlinx.coroutines.*
 import sh.calvin.reorderable.ReorderableColumn
+import sh.calvin.reorderable.ReorderableItem
+import kotlin.math.roundToInt
+import org.json.JSONObject
 import java.net.URL
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -61,7 +76,7 @@ data class SystemStats(
     val tempCelsius: Double,
     val cpuPercent : Int,
     val ramUsedMb  : Int,
-    val ramTotalMb : Int
+    val ramTotalMb : Int,
 )
 
 private val SYSTEM_STATS_SCRIPT = """
@@ -112,6 +127,22 @@ suspend fun fetchSystemStats(settings: SettingsManager): SystemStats? =
             )
         } catch (_: Exception) { null }
     }
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  MainApp — gestion de la navigation entre écrans
+// ══════════════════════════════════════════════════════════════════════════════
+enum class Screen {
+    CONTROL, SETTINGS, TERMINAL, DOCKER, MONITORING,
+    PIHOLE, PIHOLE_CONFIG, WIREGUARD, NOTIFS, PWM, GPIO_PLANNER, SENSORS, ABOUT,
+    EASTER_EGG_OCTOPUS, LOGS_VIEWER, FAIL2BAN, UFW, FILE_MANAGER
+}
+
+data class DrawerItemData(
+    val label: String,
+    val icon: ImageVector,
+    val color: Color,
+    val screen: Screen? = null
+)
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  MainActivity
@@ -202,28 +233,30 @@ class MainActivity : FragmentActivity() {
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Mise à jour", style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.update_title), style = MaterialTheme.typography.titleLarge)
                     when (progress) {
                         -1 -> {
-                            Icon(Icons.Default.Error, contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
-                            Text("Erreur lors du téléchargement",
+                            Icon(
+                                Icons.Default.Error, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp)
+                            )
+                            Text(stringResource(R.string.update_error),
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodyMedium)
                             Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                                Text("Fermer")
+                                Text(stringResource(R.string.action_close))
                             }
                         }
                         100 -> {
                             Icon(Icons.Default.CheckCircle, contentDescription = null,
                                 tint = Color(0xFF66BB6A), modifier = Modifier.size(48.dp))
-                            Text("Téléchargement terminé !", style = MaterialTheme.typography.bodyMedium)
-                            Text("L'installation va démarrer…",
+                            Text(stringResource(R.string.update_success), style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.update_installing),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         else -> {
-                            Text("Téléchargement en cours…", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.update_downloading), style = MaterialTheme.typography.bodyMedium)
                             LinearProgressIndicator(
                                 progress = { progress / 100f },
                                 modifier = Modifier.fillMaxWidth()
@@ -231,7 +264,7 @@ class MainActivity : FragmentActivity() {
                             Text("$progress%",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary)
-                            Text("Veuillez patienter…",
+                            Text(stringResource(R.string.update_wait),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -249,7 +282,7 @@ class MainActivity : FragmentActivity() {
                 val jsonRaw           = URL("$versionUrl?t=$timestamp").readText().trim()
                 val jsonObject        = JSONObject(jsonRaw)
                 val latestVersionCode = jsonObject.getLong("versionCode")
-                val latestVersionName = jsonObject.optString("versionName", "Inconnue")
+                val latestVersionName = jsonObject.optString("versionName", getString(R.string.version_unknown))
                 val apkUrl            = jsonObject.getString("url")
 
                 val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -275,14 +308,14 @@ class MainActivity : FragmentActivity() {
 
     private fun showUpdateDialog(changelog: String, downloadUrl: String, latestVersion: String) {
         val message = buildString {
-            append("Une nouvelle version est disponible : v$latestVersion")
-            if (changelog.isNotEmpty()) append("\n\n📋 Nouveautés :\n$changelog")
-            append("\n\nVoulez-vous l'installer ?")
+            append(getString(R.string.update_message, latestVersion))
+            if (changelog.isNotEmpty()) append(getString(R.string.update_changelog, changelog))
+            append(getString(R.string.update_prompt))
         }
         android.app.AlertDialog.Builder(this)
-            .setTitle("Mise à jour disponible")
+            .setTitle(getString(R.string.update_available_title))
             .setMessage(message)
-            .setPositiveButton("Mettre à jour") { _, _ ->
+            .setPositiveButton(getString(R.string.update_action_now)) { _, _ ->
                 downloadProgress.intValue = 0
                 UpdateManager(this).downloadAndInstall(downloadUrl) { progress ->
                     downloadProgress.intValue = progress
@@ -291,7 +324,7 @@ class MainActivity : FragmentActivity() {
                     }
                 }
             }
-            .setNegativeButton("Plus tard", null)
+            .setNegativeButton(getString(R.string.update_action_later), null)
             .show()
     }
 
@@ -367,7 +400,7 @@ class MainActivity : FragmentActivity() {
                     ) {
                         Image(
                             painter = painterResource(id = R.drawable.logo),
-                            contentDescription = "Logo",
+                            contentDescription = stringResource(R.string.logo_content_description),
                             modifier = Modifier.size(70.dp),
                             contentScale = ContentScale.Fit
                         )
@@ -385,7 +418,7 @@ class MainActivity : FragmentActivity() {
                     }
                     Text("RaspberryController", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "Authentification requise pour accéder à l'application.",
+                        stringResource(R.string.auth_required),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -404,19 +437,11 @@ class MainActivity : FragmentActivity() {
                         }
                     }
                     Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
-                        Text("Réessayer")
+                        Text(stringResource(R.string.action_retry))
                     }
                 }
             }
         }
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  MainApp — gestion de la navigation entre écrans
-    // ══════════════════════════════════════════════════════════════════════════
-    private enum class Screen {
-        CONTROL, SETTINGS, TERMINAL, DOCKER, MONITORING,
-        PIHOLE, PIHOLE_CONFIG, WIREGUARD, NOTIFS, PWM, GPIO_PLANNER, SENSORS, ABOUT
     }
 
     @Composable
@@ -429,97 +454,177 @@ class MainActivity : FragmentActivity() {
         val currentScreen = remember {
             mutableStateOf(if (settings.isConfigured()) Screen.CONTROL else Screen.SETTINGS)
         }
+        val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+        val scope = rememberCoroutineScope()
 
-        AnimatedContent(
-            targetState = currentScreen.value,
-            transitionSpec = {
-                if (targetState == Screen.CONTROL) {
-                    (slideInHorizontally { -it / 3 } + fadeIn())
-                        .togetherWith(slideOutHorizontally { it } + fadeOut())
-                } else {
-                    (slideInHorizontally { it } + fadeIn())
-                        .togetherWith(slideOutHorizontally { -it / 3 } + fadeOut())
+        // Détection automatique des services au premier lancement ou après 24h
+        LaunchedEffect(settings.host) {
+            if (settings.isConfigured()) {
+                val now = System.currentTimeMillis()
+                val oneDay = 24 * 60 * 60 * 1000L
+                if (settings.lastServiceScan == 0L || (now - settings.lastServiceScan) > oneDay || !settings.isServiceInstalled(Screen.UFW) || !settings.isServiceInstalled(Screen.WIREGUARD)) {
+                    scope.launch(Dispatchers.IO) {
+                        val services = mapOf(
+                            Screen.DOCKER    to "systemctl is-active docker > /dev/null 2>&1 && echo 'ok'",
+                            Screen.PIHOLE    to "systemctl is-active pihole-FTL > /dev/null 2>&1 && echo 'ok'",
+                            Screen.WIREGUARD to "systemctl is-active wg-quick@wg0 > /dev/null 2>&1 && echo 'ok'",
+                            Screen.FAIL2BAN  to "systemctl is-active fail2ban > /dev/null 2>&1 && echo 'ok'",
+                            Screen.UFW       to "systemctl is-active ufw > /dev/null 2>&1 && echo 'ok'"
+                        )
+                        services.forEach { (screen, cmd) ->
+                            val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd)
+                            settings.setServiceInstalled(screen, !res.startsWith("[err]") && res.isNotBlank())
+                        }
+                        settings.lastServiceScan = now
+                    }
                 }
+            }
+        }
+
+        // Gestion du bouton retour système
+        BackHandler(enabled = currentScreen.value != Screen.CONTROL) {
+            currentScreen.value = Screen.CONTROL
+        }
+
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                AppDrawerContent(
+                    currentScreen = currentScreen.value,
+                    settings      = settings,
+                    onNavigate    = { screen ->
+                        currentScreen.value = screen
+                        scope.launch { drawerState.close() }
+                    }
+                )
             },
-            label = "screen_transition"
-        ) { screen ->
-            when (screen) {
-                Screen.SETTINGS -> SettingsScreen(
-                    settings           = settings,
-                    activity           = activity,
-                    onThemeChanged     = onThemeChanged,
-                    onBiometricEnabled = onBiometricEnabled,
-                    onSave             = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.TERMINAL -> TerminalScreen(
-                    settings = settings,
-                    onClose  = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.DOCKER -> DockerScreen(
-                    settings = settings,
-                    onClose  = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.MONITORING -> MonitoringScreen(
-                    settings = settings,
-                    onClose  = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.PIHOLE_CONFIG -> PiHoleConfigScreen(
-                    settings = settings,
-                    onClose  = { currentScreen.value = Screen.CONTROL },
-                    onSaved  = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.PIHOLE -> PiHoleScreen(
-                    settings     = settings,
-                    onClose      = { currentScreen.value = Screen.CONTROL },
-                    onOpenConfig = { currentScreen.value = Screen.PIHOLE_CONFIG }
-                )
-                Screen.WIREGUARD -> WireGuardScreen(
-                    settings = settings,
-                    onClose  = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.NOTIFS -> NotificationSettingsScreen(
-                    settings = settings,
-                    onBack   = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.PWM -> PwmSliderScreen(
-                    settings = settings,
-                    onClose  = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.GPIO_PLANNER -> GpioScheduleScreen(
-                    settings = settings,
-                    onClose  = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.SENSORS -> SensorDashboardScreen(
-                    settings = settings,
-                    onClose  = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.ABOUT -> AboutScreen(
-                    onBack = { currentScreen.value = Screen.CONTROL }
-                )
-                Screen.CONTROL -> ControlScreen(
-                    settings              = settings,
-                    onOpenSettings        = { currentScreen.value = Screen.SETTINGS },
-                    onOpenTerminal        = { currentScreen.value = Screen.TERMINAL },
-                    onOpenDocker          = { currentScreen.value = Screen.DOCKER },
-                    onOpenMonitoring      = { currentScreen.value = Screen.MONITORING },
-                    onOpenPiHole          = { currentScreen.value = Screen.PIHOLE },
-                    onOpenWireGuard       = { currentScreen.value = Screen.WIREGUARD },
-                    onOpenNotifSettings   = { currentScreen.value = Screen.NOTIFS },
-                    onOpenPwmSlider       = { currentScreen.value = Screen.PWM },
-                    onOpenGpioSchedule    = { currentScreen.value = Screen.GPIO_PLANNER },
-                    onOpenSensorDashboard = { currentScreen.value = Screen.SENSORS },
-                    onOpenAbout           = { currentScreen.value = Screen.ABOUT }
-                )
+            gesturesEnabled = currentScreen.value != Screen.EASTER_EGG_OCTOPUS
+        ) {
+            AnimatedContent(
+                targetState = currentScreen.value,
+                transitionSpec = {
+                    if (targetState == Screen.CONTROL || targetState == Screen.ABOUT) {
+                        (slideInHorizontally { -it / 3 } + fadeIn())
+                            .togetherWith(slideOutHorizontally { it } + fadeOut())
+                    } else {
+                        (slideInHorizontally { it } + fadeIn())
+                            .togetherWith(slideOutHorizontally { -it / 3 } + fadeOut())
+                    }
+                },
+                label = "screen_transition"
+            ) { screen ->
+                when (screen) {
+                    Screen.SETTINGS -> SettingsScreen(
+                        settings           = settings,
+                        activity           = activity,
+                        onThemeChanged     = onThemeChanged,
+                        onBiometricEnabled = onBiometricEnabled,
+                        onSave             = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu         = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.TERMINAL -> TerminalScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.DOCKER -> DockerScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.MONITORING -> MonitoringScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.PIHOLE_CONFIG -> PiHoleConfigScreen(
+                        settings = settings,
+                        onClose  = { currentScreen.value = Screen.PIHOLE },
+                        onSaved  = { currentScreen.value = Screen.PIHOLE }
+                    )
+                    Screen.PIHOLE -> PiHoleScreen(
+                        settings     = settings,
+                        onClose      = { currentScreen.value = Screen.CONTROL },
+                        onOpenConfig = { currentScreen.value = Screen.PIHOLE_CONFIG },
+                        onOpenMenu   = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.WIREGUARD -> WireGuardScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.NOTIFS -> NotificationSettingsScreen(
+                        settings   = settings,
+                        onBack     = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.PWM -> PwmSliderScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.GPIO_PLANNER -> GpioScheduleScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.SENSORS -> SensorDashboardScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.LOGS_VIEWER -> LogsViewerScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.FAIL2BAN -> Fail2BanScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.UFW -> UfwScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.FILE_MANAGER -> FileManagerScreen(
+                        settings   = settings,
+                        onClose    = { currentScreen.value = Screen.CONTROL },
+                        onOpenMenu = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.ABOUT -> AboutScreen(
+                        onLaunchEasterEgg = { currentScreen.value = Screen.EASTER_EGG_OCTOPUS },
+                        onOpenMenu        = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.EASTER_EGG_OCTOPUS -> OctopusEasterEggScreen(
+                        onClose = { currentScreen.value = Screen.ABOUT }
+                    )
+                    Screen.CONTROL -> ControlScreen(
+                        settings              = settings,
+                        onOpenSettings        = { currentScreen.value = Screen.SETTINGS },
+                        onOpenTerminal        = { currentScreen.value = Screen.TERMINAL },
+                        onOpenDocker          = { currentScreen.value = Screen.DOCKER },
+                        onOpenMonitoring      = { currentScreen.value = Screen.MONITORING },
+                        onOpenPiHole          = { currentScreen.value = Screen.PIHOLE },
+                        onOpenWireGuard       = { currentScreen.value = Screen.WIREGUARD },
+                        onOpenPwmSlider       = { currentScreen.value = Screen.PWM },
+                        onOpenGpioSchedule    = { currentScreen.value = Screen.GPIO_PLANNER },
+                        onOpenSensorDashboard = { currentScreen.value = Screen.SENSORS },
+                        onOpenMenu            = { scope.launch { drawerState.open() } }
+                    )
+                }
             }
         }
     }
 
-    // ── Écran À propos ────────────────────────────────────────────────────────
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    fun AboutScreen(onBack: () -> Unit) {
+    private fun AppDrawerContent(
+        currentScreen: Screen,
+        settings     : SettingsManager,
+        onNavigate   : (Screen) -> Unit
+    ) {
         val context = LocalContext.current
-        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
         val versionName = remember {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -527,19 +632,194 @@ class MainActivity : FragmentActivity() {
                 } else {
                     @Suppress("DEPRECATION")
                     context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                } ?: "1.4.2"
+            } catch (_: Exception) { "1.4.2" }
+        }
+
+        ModalDrawerSheet(
+            modifier = Modifier.width(320.dp),
+            drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+            drawerContainerColor = MaterialTheme.colorScheme.surface
+        ) {
+            // ── Header du tiroir ──────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f), Color.Transparent)
+                        )
+                    )
+                    .padding(top = 48.dp, bottom = 24.dp, start = 24.dp, end = 24.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Surface(
+                        modifier = Modifier.size(64.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.White,
+                        shadowElevation = 4.dp
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.logo),
+                            contentDescription = stringResource(R.string.logo_content_description),
+                            modifier = Modifier.padding(12.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Raspberry Pi",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF4CAF50))
+                            )
+                            Text(
+                                text = "${settings.username}@${settings.host}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
                 }
+            }
+
+            // ── Corps scrollable du tiroir ────────────────────────────
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Spacer(Modifier.height(8.dp))
+
+                // Dashboard
+                DrawerNavItem(
+                    item = DrawerItemData(stringResource(R.string.nav_dashboard), Icons.Default.GridView, MaterialTheme.colorScheme.primary, Screen.CONTROL),
+                    selected = currentScreen == Screen.CONTROL,
+                    onClick = { onNavigate(Screen.CONTROL) },
+                    settings = settings
+                )
+
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                // Groupe GPIO
+                DrawerSectionLabel(stringResource(R.string.section_gpio))
+                val gpioItems = listOf(
+                    DrawerItemData(stringResource(R.string.nav_pwm), Icons.Default.Tune, Color(0xFF7C4DFF), Screen.PWM),
+                    DrawerItemData(stringResource(R.string.nav_gpio_planner), Icons.Default.Schedule, Color(0xFF00897B), Screen.GPIO_PLANNER),
+                    DrawerItemData(stringResource(R.string.nav_sensors), Icons.Default.Sensors, Color(0xFF1565C0), Screen.SENSORS),
+                )
+                gpioItems.forEach { item ->
+                    DrawerNavItem(item, selected = currentScreen == item.screen, onClick = { item.screen?.let { onNavigate(it) } }, settings = settings)
+                }
+
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                // Groupe Services
+                DrawerSectionLabel(stringResource(R.string.section_services))
+                val serviceItems = listOf(
+                    DrawerItemData(stringResource(R.string.nav_monitoring), Icons.Default.BarChart, Color(0xFF2196F3), Screen.MONITORING),
+                    DrawerItemData(stringResource(R.string.nav_docker), Icons.Default.Apps, Color(0xFF0288D1), Screen.DOCKER),
+                    DrawerItemData(stringResource(R.string.nav_file_manager), Icons.Default.Folder, Color(0xFFFFA000), Screen.FILE_MANAGER),
+                    DrawerItemData(stringResource(R.string.nav_pihole), Icons.Default.Shield, Color(0xFFE53935), Screen.PIHOLE),
+                    DrawerItemData(stringResource(R.string.nav_wireguard), Icons.Default.VpnLock, Color(0xFF43A047), Screen.WIREGUARD),
+                    DrawerItemData(stringResource(R.string.nav_terminal), Icons.Default.Terminal, MaterialTheme.colorScheme.onSurface, Screen.TERMINAL),
+                    DrawerItemData(stringResource(R.string.nav_logs), Icons.AutoMirrored.Filled.ListAlt, Color(0xFF009688), Screen.LOGS_VIEWER),
+                )
+                serviceItems.forEach { item ->
+                    DrawerNavItem(item, selected = currentScreen == item.screen || (item.screen == Screen.PIHOLE && currentScreen == Screen.PIHOLE_CONFIG), onClick = { item.screen?.let { onNavigate(it) } }, settings = settings)
+                }
+
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                // Groupe Security
+                DrawerSectionLabel(stringResource(R.string.section_security))
+                val securityItems = listOf(
+                    DrawerItemData(stringResource(R.string.nav_fail2ban), Icons.Default.LockPerson, Color(0xFFD32F2F), Screen.FAIL2BAN),
+                    DrawerItemData(stringResource(R.string.nav_ufw), Icons.Default.Security, Color(0xFF388E3C), Screen.UFW),
+                )
+                securityItems.forEach { item ->
+                    DrawerNavItem(item, selected = currentScreen == item.screen, onClick = { item.screen?.let { onNavigate(it) } }, settings = settings)
+                }
+
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                // Groupe Utilitaires
+                DrawerSectionLabel(stringResource(R.string.section_config))
+                val configItems = listOf(
+                    DrawerItemData(stringResource(R.string.nav_notifs), Icons.Default.Notifications, Color(0xFFFF9800), Screen.NOTIFS),
+                    DrawerItemData(stringResource(R.string.nav_settings), Icons.Default.Settings, MaterialTheme.colorScheme.onSurface, Screen.SETTINGS),
+                    DrawerItemData(stringResource(R.string.nav_about), Icons.Default.Info, MaterialTheme.colorScheme.onSurface, Screen.ABOUT),
+                )
+                configItems.forEach { item ->
+                    DrawerNavItem(item, selected = currentScreen == item.screen, onClick = { item.screen?.let { onNavigate(it) } }, settings = settings)
+                }
+
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // ── Footer du tiroir ──────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Info, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                    Text(
+                        text = stringResource(R.string.drawer_footer, settings.port, versionName),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+    @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+    @Composable
+    fun AboutScreen(onLaunchEasterEgg: () -> Unit, onOpenMenu: () -> Unit) {
+        val context = LocalContext.current
+        var clickCount by remember { mutableIntStateOf(0) }
+        val uriHandler = LocalUriHandler.current
+        val versionName = remember {
+            try {
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0)).versionName
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                }) ?: "1.4.2"
             } catch (_: Exception) {
-                "1.0.0"
+                "1.4.2"
             }
         }
 
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("À propos") },
+                    title = { Text(stringResource(R.string.nav_about)) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
                         }
                     }
                 )
@@ -574,9 +854,20 @@ class MainActivity : FragmentActivity() {
                 )
 
                 Text(
-                    text = "Version $versionName",
+                    text = stringResource(R.string.version_label, versionName),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {
+                            clickCount++
+                            if (clickCount >= 5) {
+                                onLaunchEasterEgg()
+                                clickCount = 0
+                            }
+                        }
+                    )
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -594,7 +885,7 @@ class MainActivity : FragmentActivity() {
                                 modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(12.dp))
                             Column {
-                                Text("Développeur", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.about_developer), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("RillMaster", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
                             }
                         }
@@ -611,7 +902,7 @@ class MainActivity : FragmentActivity() {
                                 modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(12.dp))
                             Column {
-                                Text("Dépôt GitHub", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.about_github), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("RillMaster/RaspberryController",
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.primary,
@@ -627,11 +918,128 @@ class MainActivity : FragmentActivity() {
                 Spacer(modifier = Modifier.weight(1f))
 
                 Text(
-                    text = "© 2026 RillMaster",
+                    text = stringResource(R.string.about_copyright),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Easter Egg : Pieuvre Draggable
+    // ══════════════════════════════════════════════════════════════════════════
+    @Composable
+    fun OctopusEasterEggScreen(onClose: () -> Unit) {
+        var offset by remember { mutableStateOf(Offset(500f, 1000f)) }
+        // La traînée contient maintenant des segments qui se suivent
+        val trail = remember { mutableStateListOf<Offset>() }
+
+        val infiniteTransition = rememberInfiniteTransition(label = "tentacle_anim")
+        val time by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 2f * kotlin.math.PI.toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(1500, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "time"
+        )
+
+        // Physique des tentacules : chaque point suit le précédent avec un décalage vers le bas
+        LaunchedEffect(Unit) {
+            if (trail.isEmpty()) {
+                repeat(20) { trail.add(offset) }
+            }
+            while (true) {
+                withContext(Dispatchers.Default) {
+                    trail[0] = offset
+                    for (i in 1 until trail.size) {
+                        val targetX = trail[i - 1].x
+                        val targetY = trail[i - 1].y + 25f // Distance entre segments
+                        
+                        // Effet élastique/amortissement
+                        val newX = trail[i].x + (targetX - trail[i].x) * 0.15f
+                        val newY = trail[i].y + (targetY - trail[i].y) * 0.15f
+                        
+                        trail[i] = Offset(newX, newY)
+                    }
+                }
+                delay(16) // ~60 FPS
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF004D40))
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        offset += dragAmount
+                    }
+                }
+        ) {
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.padding(16.dp).padding(top = 32.dp).align(Alignment.TopStart)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close), tint = Color.White)
+            }
+
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val tentacleCount = 5
+                for (i in 0 until tentacleCount) {
+                    val path = Path()
+                    // Départ du tentacule sous le logo
+                    path.moveTo(offset.x + (i - 2) * 15f, offset.y + 30f)
+                    
+                    for (j in trail.indices) {
+                        // Le wave varie selon la profondeur j pour un mouvement serpentin
+                        val wave = kotlin.math.sin(j * 0.4f + i + time) * (10f + j * 0.5f)
+                        path.lineTo(
+                            trail[j].x + (i - 2) * 10f + wave,
+                            trail[j].y + 30f
+                        )
+                    }
+                    drawPath(
+                        path = path,
+                        color = Color.Black.copy(alpha = 0.5f),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = 12f - (i % 3), // Légère variation d'épaisseur
+                            cap = StrokeCap.Round
+                        )
+                    )
+                }
+            }
+
+            val density = LocalDensity.current.density
+            Box(
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            (offset.x - 40 * density).toInt(),
+                            (offset.y - 40 * density).toInt()
+                        )
+                    }
+                    .size(80.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xFFB2DFDB)),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(60.dp)
+                )
+            }
+            
+            Text(
+                "🐙 Raspberry Octopus",
+                modifier = Modifier.align(Alignment.BottomCenter).padding(48.dp),
+                color = Color.White.copy(alpha = 0.4f),
+                style = MaterialTheme.typography.labelLarge
+            )
         }
     }
 
@@ -654,179 +1062,120 @@ class MainActivity : FragmentActivity() {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  Barre de statut système (temp + CPU + RAM)
+    //  Barre de statut système (Dashboard moderne)
     // ══════════════════════════════════════════════════════════════════════════
     @Composable
     fun SystemStatusBar(settings: SettingsManager, stats: SystemStats?, loading: Boolean) {
+        val cpuColor = when {
+            stats == null       -> MaterialTheme.colorScheme.outline
+            stats.cpuPercent > 80 -> Color(0xFFEF5350)
+            stats.cpuPercent > 50 -> Color(0xFFFF9800)
+            else                  -> Color(0xFF66BB6A)
+        }
+
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape    = RoundedCornerShape(20.dp),
+            shape    = RoundedCornerShape(24.dp),
             colors   = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-            )
+                containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
         ) {
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-                // En-tête connexion
+            Column(modifier = Modifier.padding(20.dp)) {
                 Row(
-                    verticalAlignment     = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier          = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment     = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .let { if (stats != null) it else it }
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = if (stats != null) Color(0xFF4CAF50) else Color(0xFF9E9E9E),
-                            modifier = Modifier.fillMaxSize()
-                        ) {}
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (stats != null) Color(0xFF4CAF50) else if (loading) Color.Gray else Color.Red)
+                        )
+                        Text(
+                            text       = settings.host,
+                            style      = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    Text(
-                        text       = "${settings.username}@${settings.host}:${settings.port}",
-                        style      = MaterialTheme.typography.labelSmall,
-                        color      = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    if (loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else if (stats != null) {
+                        Text(
+                            stringResource(R.string.status_online),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF4CAF50),
+                            modifier = Modifier.background(Color(0xFF4CAF50).copy(alpha = 0.1f), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
-                when {
-                    loading -> Row(
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text(
-                            "Connexion au Raspberry Pi…",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    stats == null -> Row(
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.WifiOff,
-                            contentDescription = null,
-                            tint     = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            "Impossible de joindre le Raspberry Pi",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-
-                    else -> {
-                        // Trois métriques côte à côte
-                        Row(
-                            modifier              = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            StatBlock(
-                                icon  = Icons.Default.Thermostat,
-                                value = "%.1f°C".format(stats.tempCelsius),
-                                label = "Temp CPU",
-                                color = tempColor(stats.tempCelsius)
-                            )
-                            VerticalDivider(
-                                modifier = Modifier.height(52.dp),
-                                color    = MaterialTheme.colorScheme.outlineVariant
-                            )
-                            val cpuColor = when {
-                                stats.cpuPercent >= 80 -> Color(0xFFEF5350)
-                                stats.cpuPercent >= 50 -> Color(0xFFFF9800)
-                                else                   -> Color(0xFF66BB6A)
-                            }
-                            StatBlock(
-                                icon  = Icons.Default.Memory,
-                                value = "${stats.cpuPercent}%",
-                                label = "CPU",
-                                color = cpuColor
-                            )
-                            VerticalDivider(
-                                modifier = Modifier.height(52.dp),
-                                color    = MaterialTheme.colorScheme.outlineVariant
-                            )
-                            val ramPercent = if (stats.ramTotalMb > 0)
-                                stats.ramUsedMb * 100 / stats.ramTotalMb else 0
-                            val ramColor = when {
-                                ramPercent >= 85 -> Color(0xFFEF5350)
-                                ramPercent >= 65 -> Color(0xFFFF9800)
-                                else             -> Color(0xFF66BB6A)
-                            }
-                            StatBlock(
-                                icon  = Icons.Default.Storage,
-                                value = "${stats.ramUsedMb} Mo",
-                                label = "RAM · $ramPercent%",
-                                color = ramColor
+                AnimatedContent(
+                    targetState = stats,
+                    transitionSpec = { fadeIn(animationSpec = tween(500)) togetherWith fadeOut(animationSpec = tween(500)) },
+                    label = "stats_dashboard"
+                ) { s ->
+                    if (s == null) {
+                        Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                if (loading) stringResource(R.string.status_syncing) else stringResource(R.string.status_lost_connection),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
                         }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Barres de progression CPU + RAM
-                        val cpuColor = when {
-                            stats.cpuPercent >= 80 -> Color(0xFFEF5350)
-                            stats.cpuPercent >= 50 -> Color(0xFFFF9800)
-                            else                   -> Color(0xFF66BB6A)
-                        }
-                        val ramPct = if (stats.ramTotalMb > 0)
-                            stats.ramUsedMb.toFloat() / stats.ramTotalMb else 0f
-                        val ramBarColor = when {
-                            (ramPct * 100).toInt() >= 85 -> Color(0xFFEF5350)
-                            (ramPct * 100).toInt() >= 65 -> Color(0xFFFF9800)
-                            else                         -> Color(0xFF66BB6A)
-                        }
-
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    } else {
+                        Column {
                             Row(
-                                verticalAlignment     = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                modifier              = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(
-                                    "CPU",
-                                    style    = MaterialTheme.typography.labelSmall,
-                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.width(32.dp)
-                                )
-                                LinearProgressIndicator(
-                                    progress   = { (stats.cpuPercent / 100f).coerceIn(0f, 1f) },
-                                    modifier   = Modifier.weight(1f).height(5.dp),
-                                    color      = cpuColor,
-                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
+                                StatBlock(Icons.Default.Thermostat, "%.1f°C".format(s.tempCelsius), stringResource(R.string.stat_avg), tempColor(s.tempCelsius))
+                                StatBlock(Icons.Default.Memory, "${s.cpuPercent}%", stringResource(R.string.cpu_load), cpuColor)
+                                
+                                val ramPct = if (s.ramTotalMb > 0) s.ramUsedMb.toFloat() / s.ramTotalMb else 0f
+                                val ramColor = if (ramPct > 0.85f) Color(0xFFEF5350) else Color(0xFF66BB6A)
+                                StatBlock(Icons.Default.Storage, "${s.ramUsedMb} ${stringResource(R.string.unit_mb)}", stringResource(R.string.ram_memory), ramColor)
                             }
-                            Row(
-                                verticalAlignment     = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    "RAM",
-                                    style    = MaterialTheme.typography.labelSmall,
-                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.width(32.dp)
-                                )
-                                LinearProgressIndicator(
-                                    progress   = { ramPct.coerceIn(0f, 1f) },
-                                    modifier   = Modifier.weight(1f).height(5.dp),
-                                    color      = ramBarColor,
-                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
+
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                // CPU
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text(stringResource(R.string.cpu_load), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("${s.cpuPercent}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    }
+                                    LinearProgressIndicator(
+                                        progress   = { (s.cpuPercent / 100f).coerceIn(0f, 1f) },
+                                        modifier   = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                                        color      = cpuColor,
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                }
+                                
+                                // RAM
+                                val ramPct = if (s.ramTotalMb > 0) s.ramUsedMb.toFloat() / s.ramTotalMb else 0f
+                                val ramColor = if (ramPct > 0.85f) Color(0xFFEF5350) else MaterialTheme.colorScheme.primary
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text(stringResource(R.string.ram_memory), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("${(ramPct * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    }
+                                    LinearProgressIndicator(
+                                        progress   = { ramPct.coerceIn(0f, 1f) },
+                                        modifier   = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                                        color      = ramColor,
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                }
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            "Actualisation toutes les ${settings.tempRefreshMs / 1000} s",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
                     }
                 }
             }
@@ -869,7 +1218,8 @@ class MainActivity : FragmentActivity() {
         activity          : FragmentActivity,
         onThemeChanged    : (String) -> Unit,
         onBiometricEnabled: () -> Unit,
-        onSave            : () -> Unit
+        onSave            : () -> Unit,
+        onOpenMenu         : () -> Unit
     ) {
         var host     by remember { mutableStateOf(settings.host) }
         var port     by remember { mutableIntStateOf(settings.port) }
@@ -882,7 +1232,11 @@ class MainActivity : FragmentActivity() {
                 .canAuthenticate(BIOMETRIC_STRONG or DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS
         }
 
-        val themeOptions    = listOf("system" to "Système", "light" to "Clair", "dark" to "Sombre")
+        val themeOptions    = listOf(
+            "system" to stringResource(R.string.settings_theme_system),
+            "light" to stringResource(R.string.settings_theme_light),
+            "dark" to stringResource(R.string.settings_theme_dark)
+        )
         var selectedTheme   by remember { mutableStateOf(settings.theme) }
         val refreshOptions  = listOf(1000 to "1 s", 2000 to "2 s", 5000 to "5 s", 10000 to "10 s")
         var selectedRefresh by remember { mutableIntStateOf(settings.tempRefreshMs) }
@@ -894,17 +1248,15 @@ class MainActivity : FragmentActivity() {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Paramètres") },
+                    title = { Text(stringResource(R.string.nav_settings)) },
                     navigationIcon = {
-                        if (settings.isConfigured()) {
-                            IconButton(onClick = onSave) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
-                            }
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
                         }
                     },
                     actions = {
                         IconButton(onClick = { showAddDialog.value = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "Ajouter un raccourci")
+                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.action_add))
                         }
                     }
                 )
@@ -918,20 +1270,20 @@ class MainActivity : FragmentActivity() {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                SectionTitle("Connexion SSH")
+                SectionTitle(stringResource(R.string.settings_ssh_title))
                 OutlinedTextField(value = host, onValueChange = { host = it },
-                    label = { Text("Adresse IP") }, modifier = Modifier.fillMaxWidth())
+                    label = { Text(stringResource(R.string.settings_ip_label)) }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = port.toString(),
                     onValueChange = { port = it.toIntOrNull() ?: 22 },
-                    label = { Text("Port SSH") }, modifier = Modifier.fillMaxWidth())
+                    label = { Text(stringResource(R.string.settings_port_label)) }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = username, onValueChange = { username = it },
-                    label = { Text("Nom d'utilisateur") }, modifier = Modifier.fillMaxWidth())
+                    label = { Text(stringResource(R.string.settings_user_label)) }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = password, onValueChange = { password = it },
-                    label = { Text("Mot de passe") },
+                    label = { Text(stringResource(R.string.settings_pass_label)) },
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth())
 
-                SectionTitle("Timeout SSH")
+                SectionTitle(stringResource(R.string.settings_timeout_title))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     timeoutOptions.forEach { (ms, label) ->
                         FilterChip(
@@ -943,7 +1295,7 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
-                SectionTitle("Thème")
+                SectionTitle(stringResource(R.string.settings_theme_title))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     themeOptions.forEach { (value, label) ->
                         FilterChip(
@@ -955,9 +1307,9 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
-                SectionTitle("Sécurité")
+                SectionTitle(stringResource(R.string.settings_security_title))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Biométrie", modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.settings_biometric_label), modifier = Modifier.weight(1f))
                     Switch(
                         checked         = biometricEnabled,
                         onCheckedChange = {
@@ -969,7 +1321,7 @@ class MainActivity : FragmentActivity() {
                     )
                 }
 
-                SectionTitle("Rafraîchissement température")
+                SectionTitle(stringResource(R.string.settings_refresh_title))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     refreshOptions.forEach { (ms, label) ->
                         FilterChip(
@@ -981,7 +1333,7 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
-                SectionTitle("Raccourcis terminal")
+                SectionTitle(stringResource(R.string.settings_shortcuts_title))
                 ReorderableColumn(
                     list                = shortcuts,
                     onSettle            = { fromIndex, toIndex ->
@@ -1015,7 +1367,7 @@ class MainActivity : FragmentActivity() {
                                 ) {
                                     Icon(
                                         imageVector        = Icons.Default.DragHandle,
-                                        contentDescription = "Déplacer",
+                                        contentDescription = stringResource(R.string.action_move),
                                         modifier           = Modifier.draggableHandle().padding(end = 12.dp),
                                         tint               = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1034,7 +1386,7 @@ class MainActivity : FragmentActivity() {
                                         shortcuts          = updated
                                         settings.shortcuts = updated
                                     }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Supprimer",
+                                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.action_delete),
                                             tint = MaterialTheme.colorScheme.error)
                                     }
                                 }
@@ -1052,7 +1404,7 @@ class MainActivity : FragmentActivity() {
                         onSave()
                     },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
-                ) { Text("Enregistrer la configuration") }
+                ) { Text(stringResource(R.string.action_save)) }
             }
         }
 
@@ -1060,7 +1412,7 @@ class MainActivity : FragmentActivity() {
             ShortcutDialog(
                 initialLabel   = "",
                 initialCommand = "",
-                title          = "Ajouter",
+                title          = stringResource(R.string.action_add),
                 onConfirm      = { label, cmd ->
                     val updated        = shortcuts + Pair(label, cmd)
                     shortcuts          = updated
@@ -1091,16 +1443,16 @@ class MainActivity : FragmentActivity() {
                     OutlinedTextField(
                         value         = label,
                         onValueChange = { label = it },
-                        label         = { Text("Libellé du bouton") },
-                        placeholder   = { Text("ex : reboot") },
+                        label         = { Text(stringResource(R.string.shortcut_dialog_label)) },
+                        placeholder   = { Text(stringResource(R.string.shortcut_example_label)) },
                         singleLine    = true,
                         modifier      = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value         = command,
                         onValueChange = { command = it },
-                        label         = { Text("Commande SSH") },
-                        placeholder   = { Text("ex : sudo reboot") },
+                        label         = { Text(stringResource(R.string.shortcut_dialog_command)) },
+                        placeholder   = { Text(stringResource(R.string.shortcut_example_command)) },
                         singleLine    = true,
                         modifier      = Modifier.fillMaxWidth(),
                         textStyle     = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace)
@@ -1111,10 +1463,10 @@ class MainActivity : FragmentActivity() {
                 Button(
                     onClick  = { if (label.isNotEmpty() && command.isNotEmpty()) onConfirm(label, command) },
                     enabled  = label.isNotEmpty() && command.isNotEmpty()
-                ) { Text("Ajouter") }
+                ) { Text(stringResource(R.string.action_add)) }
             },
             dismissButton = {
-                OutlinedButton(onClick = onDismiss) { Text("Annuler") }
+                OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -1132,272 +1484,125 @@ class MainActivity : FragmentActivity() {
         onOpenMonitoring      : () -> Unit,
         onOpenPiHole          : () -> Unit,
         onOpenWireGuard       : () -> Unit,
-        onOpenNotifSettings   : () -> Unit,
         onOpenPwmSlider       : () -> Unit,
         onOpenGpioSchedule    : () -> Unit,
         onOpenSensorDashboard : () -> Unit,
-        onOpenAbout           : () -> Unit
+        onOpenMenu            : () -> Unit
     ) {
         var systemStats  by remember { mutableStateOf<SystemStats?>(null) }
         var statsLoading by remember { mutableStateOf(true) }
-
-        val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-        val scope       = rememberCoroutineScope()
+        var connectionAttempts by remember { mutableIntStateOf(0) }
 
         LaunchedEffect(Unit) {
             while (true) {
-                statsLoading = systemStats == null
-                systemStats  = fetchSystemStats(settings)
-                statsLoading = false
+                if (systemStats == null && connectionAttempts < 2) {
+                    statsLoading = true
+                }
+                
+                val result = fetchSystemStats(settings)
+                
+                if (result != null) {
+                    systemStats = result
+                    connectionAttempts = 0
+                    statsLoading = false
+                } else {
+                    connectionAttempts++
+                    if (connectionAttempts >= 2) {
+                        systemStats = null
+                    }
+                    statsLoading = false
+                }
                 delay(settings.tempRefreshMs.toLong())
             }
         }
 
-        // ── Définition des groupes du tiroir ──────────────────────────────────
-        data class DrawerItem(
-            val label  : String,
-            val icon   : ImageVector,
-            val color  : Color,
-            val onClick: () -> Unit
-        )
-
-        val gpioItems = listOf(
-            DrawerItem("Contrôle PWM",      Icons.Default.Tune,     Color(0xFF7C4DFF), onOpenPwmSlider),
-            DrawerItem("Planificateur GPIO", Icons.Default.Schedule, Color(0xFF00897B), onOpenGpioSchedule),
-            DrawerItem("Capteurs",           Icons.Default.Sensors,  Color(0xFF1565C0), onOpenSensorDashboard),
-        )
-        val serviceItems = listOf(
-            DrawerItem("Monitoring",    Icons.Default.BarChart,      Color(0xFF2196F3), onOpenMonitoring),
-            DrawerItem("Docker",        Icons.Default.Apps,          Color(0xFF0288D1), onOpenDocker),
-            DrawerItem("Pi-hole",       Icons.Default.Shield,        Color(0xFFE53935), onOpenPiHole),
-            DrawerItem("WireGuard",     Icons.Default.VpnLock,       Color(0xFF43A047), onOpenWireGuard),
-            DrawerItem("Terminal",      Icons.Default.Terminal,      MaterialTheme.colorScheme.onSurface, onOpenTerminal),
-        )
-        val utilItems = listOf(
-            DrawerItem("Notifications", Icons.Default.Notifications, MaterialTheme.colorScheme.onSurface, onOpenNotifSettings),
-            DrawerItem("Paramètres",    Icons.Default.Settings,      MaterialTheme.colorScheme.onSurface, onOpenSettings),
-            DrawerItem("À propos",      Icons.Default.Info,          MaterialTheme.colorScheme.onSurface, onOpenAbout),
-        )
-
-        ModalNavigationDrawer(
-            drawerState   = drawerState,
-            drawerContent = {
-                ModalDrawerSheet(
-                    modifier = Modifier.width(300.dp)
-                ) {
-                    // ── Header du tiroir ──────────────────────────────────────
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(horizontal = 20.dp, vertical = 32.dp)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            // Logo en image
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(12.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.logo),
-                                    contentDescription = "App Logo",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(
-                                    text       = "Raspberry Controller",
-                                    style      = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color      = MaterialTheme.colorScheme.onSurface
-                                )
-                                Row(
-                                    verticalAlignment     = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    // Indicateur de connexion
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (systemStats != null) Color(0xFF4CAF50)
-                                                else Color(0xFFBDBDBD)
-                                            )
-                                    )
-                                    Text(
-                                        text       = "${settings.username}@${settings.host}",
-                                        style      = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color      = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { 
+                        Column {
+                            Text(stringResource(R.string.nav_dashboard), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(settings.host, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.nav_settings))
                         }
                     }
-
-                    // ── Corps scrollable du tiroir ────────────────────────────
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        Spacer(Modifier.height(8.dp))
-
-                        // Groupe GPIO
-                        DrawerSectionLabel("GPIO")
-                        gpioItems.forEach { item ->
-                            DrawerNavItem(
-                                item    = item,
-                                onClick = { scope.launch { drawerState.close() }; item.onClick() }
-                            )
-                        }
-
-                        Spacer(Modifier.height(4.dp))
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            color    = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-
-                        // Groupe Services
-                        DrawerSectionLabel("Services")
-                        serviceItems.forEach { item ->
-                            DrawerNavItem(
-                                item    = item,
-                                onClick = { scope.launch { drawerState.close() }; item.onClick() }
-                            )
-                        }
-
-                        Spacer(Modifier.height(4.dp))
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            color    = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-
-                        // Groupe Utilitaires
-                        DrawerSectionLabel("Général")
-                        utilItems.forEach { item ->
-                            DrawerNavItem(
-                                item    = item,
-                                onClick = { scope.launch { drawerState.close() }; item.onClick() }
-                            )
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-                    }
-
-                    // ── Footer du tiroir ──────────────────────────────────────
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                    )
-                    Row(
-                        modifier              = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = null,
-                            tint     = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text  = "Port SSH : ${settings.port}  ·  Timeout : ${settings.sshTimeoutMs / 1000} s",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
+                )
             }
-        ) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text("Raspberry Controller") },
-                        navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(Icons.Default.Menu, contentDescription = "Ouvrir le menu")
-                            }
-                        }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .padding(horizontal = 16.dp)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Spacer(Modifier.height(4.dp))
+                
+                // ── Stats système ─────────────────────────────────────────
+                SystemStatusBar(
+                    settings = settings,
+                    stats    = systemStats,
+                    loading  = statsLoading
+                )
+
+                // ── Section GPIO — grille 3 tuiles ────────────────
+                SectionHeader(stringResource(R.string.section_gpio), Icons.Default.Bolt)
+
+                Row(
+                    modifier              = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    GpioTile(
+                        icon     = Icons.Default.Tune,
+                        label    = stringResource(R.string.nav_pwm),
+                        color    = Color(0xFF7C4DFF),
+                        onClick  = onOpenPwmSlider,
+                        modifier = Modifier.weight(1f)
+                    )
+                    GpioTile(
+                        icon     = Icons.Default.Schedule,
+                        label    = stringResource(R.string.nav_gpio_planner),
+                        color    = Color(0xFF00897B),
+                        onClick  = onOpenGpioSchedule,
+                        modifier = Modifier.weight(1f)
+                    )
+                    GpioTile(
+                        icon     = Icons.Default.Sensors,
+                        label    = stringResource(R.string.nav_sensors),
+                        color    = Color(0xFF1565C0),
+                        onClick  = onOpenSensorDashboard,
+                        modifier = Modifier.weight(1f)
                     )
                 }
-            ) { padding ->
-                Column(
-                    modifier = Modifier
-                        .padding(padding)
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // ── Stats système ─────────────────────────────────────────
-                    SystemStatusBar(
-                        settings = settings,
-                        stats    = systemStats,
-                        loading  = statsLoading
-                    )
 
-                    // ── Section GPIO — grille 3 tuiles ────────────────
-                    Text(
-                        text  = "GPIO",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // ── Section services ─────────────────────────
+                SectionHeader(stringResource(R.string.section_services), Icons.Default.Dns)
 
-                    Row(
-                        modifier              = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        GpioTile(
-                            icon     = Icons.Default.Tune,
-                            label    = "PWM",
-                            color    = Color(0xFF7C4DFF),
-                            onClick  = onOpenPwmSlider,
-                            modifier = Modifier.weight(1f)
-                        )
-                        GpioTile(
-                            icon     = Icons.Default.Schedule,
-                            label    = "Planning",
-                            color    = Color(0xFF00897B),
-                            onClick  = onOpenGpioSchedule,
-                            modifier = Modifier.weight(1f)
-                        )
-                        GpioTile(
-                            icon     = Icons.Default.Sensors,
-                            label    = "Capteurs",
-                            color    = Color(0xFF1565C0),
-                            onClick  = onOpenSensorDashboard,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    // ── Section services — grille 2×2 ─────────────────────────
-                    Text(
-                        text  = "Services",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier              = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         ServiceTile(
                             icon     = Icons.Default.BarChart,
-                            label    = "Monitoring",
+                            label    = stringResource(R.string.nav_monitoring),
                             color    = Color(0xFF2196F3),
                             onClick  = onOpenMonitoring,
                             modifier = Modifier.weight(1f)
                         )
                         ServiceTile(
                             icon     = Icons.Default.Apps,
-                            label    = "Docker",
+                            label    = stringResource(R.string.nav_docker),
                             color    = Color(0xFF0288D1),
                             onClick  = onOpenDocker,
                             modifier = Modifier.weight(1f)
@@ -1409,42 +1614,64 @@ class MainActivity : FragmentActivity() {
                     ) {
                         ServiceTile(
                             icon     = Icons.Default.Shield,
-                            label    = "Pi-hole",
+                            label    = stringResource(R.string.nav_pihole),
                             color    = Color(0xFFE53935),
                             onClick  = onOpenPiHole,
                             modifier = Modifier.weight(1f)
                         )
                         ServiceTile(
                             icon     = Icons.Default.VpnLock,
-                            label    = "WireGuard",
+                            label    = stringResource(R.string.nav_wireguard),
                             color    = Color(0xFF43A047),
                             onClick  = onOpenWireGuard,
                             modifier = Modifier.weight(1f)
                         )
                     }
-
-                    // ── Accès rapide terminal ─────────────────────────────────
-                    OutlinedButton(
-                        onClick  = onOpenTerminal,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape    = RoundedCornerShape(16.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Terminal,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Ouvrir le terminal SSH")
-                    }
-
-                    Spacer(Modifier.height(8.dp))
                 }
+
+                // ── Accès rapide terminal ─────────────────────────────────
+                Card(
+                    onClick = onOpenTerminal,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.Terminal, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Text(stringResource(R.string.terminal_card_title), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
             }
         }
     }
 
-    // ── Label de section dans le tiroir ──────────────────────────────────────
+    @Composable
+    private fun SectionHeader(title: String, icon: ImageVector) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 8.dp)
+        ) {
+            Icon(icon, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+            Text(
+                text  = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
     @Composable
     private fun DrawerSectionLabel(text: String) {
         Text(
@@ -1460,46 +1687,45 @@ class MainActivity : FragmentActivity() {
     // ── Item de navigation du tiroir avec icône colorée ───────────────────────
     @Composable
     private fun DrawerNavItem(
-        item   : Any,
-        onClick: () -> Unit
+        item: DrawerItemData,
+        selected: Boolean,
+        onClick: () -> Unit,
+        settings: SettingsManager? = null
     ) {
-        val clazz  = item::class
-        val labelV  = clazz.members.firstOrNull { it.name == "label"  }?.call(item) as? String      ?: ""
-        val iconV   = clazz.members.firstOrNull { it.name == "icon"   }?.call(item) as? ImageVector
-        val colorV  = clazz.members.firstOrNull { it.name == "color"  }?.call(item) as? Color       ?: MaterialTheme.colorScheme.onSurface
-
+        val isInstalled = item.screen?.let { settings?.isServiceInstalled(it) } ?: true
+        
         NavigationDrawerItem(
             icon = {
-                if (iconV != null) {
-                    Surface(
-                        shape    = RoundedCornerShape(10.dp),
-                        color    = colorV.copy(alpha = 0.12f),
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector        = iconV,
-                                contentDescription = labelV,
-                                tint               = colorV,
-                                modifier           = Modifier.size(20.dp)
-                            )
-                        }
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (selected) item.color.copy(alpha = 0.2f) else item.color.copy(alpha = 0.12f),
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = item.icon,
+                            contentDescription = item.label,
+                            tint = if (isInstalled) item.color else item.color.copy(alpha = 0.3f),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             },
-            label    = {
+            label = {
                 Text(
-                    text       = labelV,
-                    style      = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    modifier   = Modifier.padding(start = 8.dp)
+                    text = item.label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    modifier = Modifier.padding(start = 8.dp),
+                    color = if (isInstalled) Color.Unspecified else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                 )
             },
-            selected = false,
-            onClick  = onClick,
+            selected = selected,
+            onClick = { if (isInstalled) onClick() },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             colors = NavigationDrawerItemDefaults.colors(
-                unselectedContainerColor = Color.Transparent
+                unselectedContainerColor = Color.Transparent,
+                selectedContainerColor = item.color.copy(alpha = 0.1f)
             )
         )
     }
@@ -1513,32 +1739,58 @@ class MainActivity : FragmentActivity() {
         onClick : () -> Unit,
         modifier: Modifier = Modifier
     ) {
+        var isPressed by remember { mutableStateOf(false) }
+        val scale by animateFloatAsState(if (isPressed) 0.94f else 1f, label = "scale")
+
         Card(
             onClick  = onClick,
-            modifier = modifier,
-            shape    = RoundedCornerShape(16.dp),
+            modifier = modifier
+                .graphicsLayer(scaleX = scale, scaleY = scale)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            isPressed = true
+                            try {
+                                awaitRelease()
+                            } finally {
+                                isPressed = false
+                            }
+                        },
+                        onTap = { onClick() }
+                    )
+                },
+            shape    = RoundedCornerShape(20.dp),
             colors   = CardDefaults.cardColors(
-                containerColor = color.copy(alpha = 0.12f)
-            )
+                containerColor = color.copy(alpha = 0.08f)
+            ),
+            border = BorderStroke(1.dp, color.copy(alpha = 0.12f))
         ) {
             Column(
                 modifier            = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 16.dp, horizontal = 12.dp),
+                    .padding(vertical = 20.dp, horizontal = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(
-                    imageVector        = icon,
-                    contentDescription = label,
-                    tint               = color,
-                    modifier           = Modifier.size(26.dp)
-                )
+                Surface(
+                    shape = CircleShape,
+                    color = color.copy(alpha = 0.15f),
+                    modifier = Modifier.size(46.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector        = icon,
+                            contentDescription = label,
+                            tint               = color,
+                            modifier           = Modifier.size(24.dp)
+                        )
+                    }
+                }
                 Text(
                     text       = label,
                     style      = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color      = color
+                    fontWeight = FontWeight.Bold,
+                    color      = color.copy(alpha = 0.9f)
                 )
             }
         }
@@ -1553,38 +1805,56 @@ class MainActivity : FragmentActivity() {
         onClick : () -> Unit,
         modifier: Modifier = Modifier
     ) {
+        var isPressed by remember { mutableStateOf(false) }
+        val scale by animateFloatAsState(if (isPressed) 0.96f else 1f, label = "scale")
+
         Card(
             onClick  = onClick,
-            modifier = modifier,
-            shape    = RoundedCornerShape(20.dp),
+            modifier = modifier
+                .graphicsLayer(scaleX = scale, scaleY = scale)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            isPressed = true
+                            try {
+                                awaitRelease()
+                            } finally {
+                                isPressed = false
+                            }
+                        },
+                        onTap = { onClick() }
+                    )
+                },
+            shape    = RoundedCornerShape(24.dp),
             colors   = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+                containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
         ) {
             Row(
                 modifier          = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 18.dp),
+                    .padding(horizontal = 16.dp, vertical = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = color.copy(alpha = 0.15f),
-                    modifier = Modifier.size(36.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    color = color.copy(alpha = 0.12f),
+                    modifier = Modifier.size(42.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector        = icon,
                             contentDescription = null,
                             tint               = color,
-                            modifier           = Modifier.size(20.dp)
+                            modifier           = Modifier.size(22.dp)
                         )
                     }
                 }
                 Text(
                     text       = label,
-                    style      = MaterialTheme.typography.bodyMedium,
+                    style      = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.weight(1f))
@@ -1597,4 +1867,3 @@ class MainActivity : FragmentActivity() {
             }
         }
     }
-}

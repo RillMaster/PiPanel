@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -62,16 +64,18 @@ data class WiringSection(
 fun SensorDashboardScreen(
     settings: SettingsManager,
     onClose : () -> Unit,
+    onOpenMenu: () -> Unit,
 ) {
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     var pollingEnabled  by remember { mutableStateOf(value = false) }
     var pollIntervalSec by remember { mutableIntStateOf(5) }
     val showWiring      = remember { mutableStateOf(value = false) }
 
-    var ds18b20  by remember { mutableStateOf(SensorState("DS18B20 — Température sonde")) }
-    var dht22Tmp by remember { mutableStateOf(SensorState("DHT22 — Température")) }
-    var dht22Hum by remember { mutableStateOf(SensorState("DHT22 — Humidité")) }
+    var ds18b20  by remember { mutableStateOf(SensorState(context.getString(R.string.sensor_ds18b20_name))) }
+    var dht22Tmp by remember { mutableStateOf(SensorState(context.getString(R.string.sensor_dht22_temp_name))) }
+    var dht22Hum by remember { mutableStateOf(SensorState(context.getString(R.string.sensor_dht22_hum_name))) }
 
     // ── Affichage schéma câblage ──────────────────────────────────────────────
     if (showWiring.value) {
@@ -143,10 +147,10 @@ fun SensorDashboardScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Capteurs temps réel", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.sensors_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    IconButton(onClick = onOpenMenu) {
+                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
                     }
                 },
                 actions = {
@@ -154,7 +158,7 @@ fun SensorDashboardScreen(
                     IconButton(onClick = { showWiring.value = true }) {
                         Icon(
                             imageVector        = Icons.Default.Cable,
-                            contentDescription = "Schéma câblage",
+                            contentDescription = stringResource(R.string.wiring_diagram_action),
                             tint               = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -162,7 +166,7 @@ fun SensorDashboardScreen(
                     IconButton(onClick = { pollingEnabled = !pollingEnabled }) {
                         Icon(
                             imageVector        = if (pollingEnabled) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
-                            contentDescription = if (pollingEnabled) "Arrêter" else "Démarrer",
+                            contentDescription = if (pollingEnabled) stringResource(R.string.action_stop) else stringResource(R.string.action_start),
                             tint               = if (pollingEnabled) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -232,7 +236,7 @@ private fun PollingStatusBanner(
                     )
             )
             Text(
-                if (active) "Polling actif toutes les ${intervalSec}s" else "Polling arrêté",
+                if (active) stringResource(R.string.polling_active, intervalSec) else stringResource(R.string.polling_stopped),
                 style    = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f)
             )
@@ -277,7 +281,7 @@ private fun SensorCard(
                 )
                 Text(sensor.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 Text(
-                    if (sensor.isOnline) "En ligne" else "Hors ligne",
+                    if (sensor.isOnline) stringResource(R.string.status_online_label) else stringResource(R.string.status_offline_label),
                     fontSize = 11.sp,
                     color    = if (sensor.isOnline) Color(0xFF4CAF50) else Color.Gray
                 )
@@ -303,7 +307,7 @@ private fun SensorCard(
                 }
             } else {
                 Text(
-                    sensor.error ?: "En attente de données…",
+                    sensor.error ?: stringResource(R.string.waiting_for_data),
                     color    = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     fontSize = 14.sp
                 )
@@ -323,12 +327,12 @@ private fun SensorCard(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        "Min: ${"%.1f".format(values.min())}$unit",
+                        stringResource(R.string.stat_min_label, "${"%.1f".format(values.min())}$unit"),
                         fontSize = 11.sp,
                         color    = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        "Max: ${"%.1f".format(values.max())}$unit",
+                        stringResource(R.string.stat_max_label, "${"%.1f".format(values.max())}$unit"),
                         fontSize = 11.sp,
                         color    = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -389,37 +393,37 @@ fun WiringDiagramScreen(onClose: () -> Unit) {
 
     val sections = listOf(
         WiringSection(
-            title       = "DS18B20 — Température sonde",
-            description = "Capteur waterproof numérique 1-Wire. Une résistance pull-up de 4.7 kΩ entre DATA et VCC est obligatoire.",
+            title       = stringResource(R.string.wiring_ds18b20_title),
+            description = stringResource(R.string.wiring_ds18b20_desc),
             color       = Color(0xFFFF5722),
             pins        = listOf(
-                PinRow("VCC  (fil rouge)",  "3.3V  — Pin physique 1"),
-                PinRow("GND  (fil noir)",   "GND   — Pin physique 6"),
-                PinRow("DATA (fil jaune)",  "GPIO4 — Pin physique 7"),
+                PinRow(stringResource(R.string.wiring_pin_vcc_red),   stringResource(R.string.wiring_pin_33v_p1)),
+                PinRow(stringResource(R.string.wiring_pin_gnd_black), stringResource(R.string.wiring_pin_gnd_p6)),
+                PinRow(stringResource(R.string.wiring_pin_data_yellow), stringResource(R.string.wiring_pin_gpio4_p7)),
             ),
-            note = "Activer le bus 1-Wire : ajouter dtoverlay=w1-gpio dans /boot/config.txt puis redémarrer."
+            note = stringResource(R.string.wiring_ds18b20_note)
         ),
         WiringSection(
-            title       = "DHT22 — Température & Humidité",
-            description = "Capteur digital AM2302. Une résistance pull-up de 10 kΩ entre DATA et VCC est recommandée.",
+            title       = stringResource(R.string.wiring_dht22_title),
+            description = stringResource(R.string.wiring_dht22_desc),
             color       = Color(0xFF2196F3),
             pins        = listOf(
-                PinRow("Pin 1 — VCC",  "3.3V  — Pin physique 1"),
-                PinRow("Pin 2 — DATA", "GPIO4 — Pin physique 7"),
-                PinRow("Pin 3 — NC",   "Non connecté"),
-                PinRow("Pin 4 — GND",  "GND   — Pin physique 6"),
+                PinRow(stringResource(R.string.wiring_pin_p1_vcc),  stringResource(R.string.wiring_pin_33v_p1)),
+                PinRow(stringResource(R.string.wiring_pin_p2_data), stringResource(R.string.wiring_pin_gpio4_p7)),
+                PinRow(stringResource(R.string.wiring_pin_p3_nc),   stringResource(R.string.wiring_not_connected)),
+                PinRow(stringResource(R.string.wiring_pin_p4_gnd),  stringResource(R.string.wiring_pin_gnd_p6)),
             ),
-            note = "Le numéro GPIO est configurable dans le code Python (actuellement GPIO4)."
+            note = stringResource(R.string.wiring_dht22_note)
         )
     )
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Schéma câblage", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.wiring_diagram_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back_action))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -474,7 +478,7 @@ private fun RpiGpioBanner() {
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
-                    "Raspberry Pi — Référence GPIO",
+                    stringResource(R.string.wiring_rpi_gpio_ref),
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
@@ -506,7 +510,7 @@ private fun RpiGpioBanner() {
             }
 
             Text(
-                "💡 Commande utile : pinout (dans le terminal du RPi)",
+                stringResource(R.string.wiring_pinout_tip),
                 color    = Color(0xFFAAAAAA),
                 fontSize = 11.sp
             )
@@ -559,14 +563,14 @@ private fun WiringSectionCard(section: WiringSection) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    "Capteur",
+                    stringResource(R.string.wiring_col_sensor),
                     fontWeight = FontWeight.SemiBold,
                     fontSize   = 12.sp,
                     modifier   = Modifier.weight(1f),
                     color      = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    "Raspberry Pi",
+                    stringResource(R.string.wiring_col_rpi),
                     fontWeight = FontWeight.SemiBold,
                     fontSize   = 12.sp,
                     modifier   = Modifier.weight(1f),
@@ -655,15 +659,13 @@ private fun ResistorReminderCard() {
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    "Résistances pull-up",
+                    stringResource(R.string.wiring_resistors_title),
                     fontWeight = FontWeight.SemiBold,
                     color      = Color(0xFFF57F17),
                     fontSize   = 13.sp
                 )
                 Text(
-                    "• DS18B20 : 4.7 kΩ entre DATA et VCC (obligatoire)\n" +
-                            "• DHT22   : 10 kΩ entre DATA et VCC (recommandé)\n\n" +
-                            "Sans ces résistances, les capteurs peuvent être instables ou ne pas répondre.",
+                    stringResource(R.string.wiring_resistors_desc),
                     fontSize = 12.sp,
                     color    = Color(0xFF5D4037)
                 )

@@ -1,11 +1,17 @@
 package com.example.raspberrycontroller
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,8 +47,9 @@ data class DiskPartition(
 
 data class ExtendedStats(
     val base           : SystemStats,
-    val gpuTempCelsius : Double?,
-    val disks          : List<DiskPartition>
+    val disks          : List<DiskPartition>,
+    val netRxBytes     : Long,
+    val netTxBytes     : Long
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -83,19 +91,23 @@ cpu_pct = round((1.0 - d_idle / d_total) * 100.0, 1) if d_total > 0 else 0.0
 # ── Température CPU ───────────────────────────────────────────────────────────
 temp = int(open('/sys/class/thermal/thermal_zone0/temp').read()) / 1000.0
 
-# ── GPU VideoCore ─────────────────────────────────────────────────────────────
-try:
-    r   = subprocess.check_output(['vcgencmd', 'measure_temp'], timeout=2).decode()
-    gpu = float(r.strip().replace('temp=', '').replace("'C", ''))
-except Exception:
-    gpu = -1.0
+# ── Network ──────────────────────────────────────────────────────────────────
+net = open('/proc/net/dev').readlines()
+rx = 0
+tx = 0
+for line in net:
+    if ':' in line and 'lo:' not in line:
+        parts = line.split(':')[1].split()
+        rx += int(parts[0])
+        tx += int(parts[8])
 
 print(
     str(round(temp, 1)) + ',' +
     str(round(cpu_pct, 1)) + ',' +
     str(mem_used  // 1024) + ',' +
     str(mem_total // 1024) + ',' +
-    str(round(gpu, 1))
+    str(rx) + ',' +
+    str(tx)
 )
 """.trimIndent()
 
@@ -121,16 +133,17 @@ suspend fun fetchExtendedStats(settings: SettingsManager): ExtendedStats? =
             val sections  = raw.split("---DISK---")
             val statLine  = sections.getOrNull(0)?.trim() ?: return@withContext null
             val statParts = statLine.split(",")
-            if (statParts.size < 5) return@withContext null
+            if (statParts.size < 6) return@withContext null
 
             val base = SystemStats(
                 tempCelsius = statParts[0].toDouble(),
-                // CPU : maintenant en % réel (0–100), plus besoin de × 100
                 cpuPercent  = statParts[1].toDouble().toInt().coerceIn(0, 100),
                 ramUsedMb   = statParts[2].toInt(),
                 ramTotalMb  = statParts[3].toInt()
             )
-            val gpuTemp = statParts[4].toDoubleOrNull()?.takeIf { it >= 0 }
+
+            val netRx = statParts[4].toLongOrNull() ?: 0L
+            val netTx = statParts[5].toLongOrNull() ?: 0L
 
             val disks = sections.getOrNull(1)
                 ?.lines()
@@ -139,9 +152,18 @@ suspend fun fetchExtendedStats(settings: SettingsManager): ExtendedStats? =
                 ?.mapNotNull { line ->
                     val p = line.trim().split(Regex("\\s+"))
                     if (p.size >= 5) {
+                        val mount = p[0]
+                        // Filtre pour ne garder que les partitions "réelles"
+                        val isSystem = mount.startsWith("/run") || mount.startsWith("/dev") ||
+                                       mount.startsWith("/proc") || mount.startsWith("/sys") || mount == "/tmp"
+                        val isImportant = mount == "/" || mount.startsWith("/boot") || 
+                                          mount.startsWith("/media") || mount.startsWith("/mnt")
+
+                        if (isSystem && !isImportant) return@mapNotNull null
+
                         fun mb(s: String) = s.trimEnd('M').toLongOrNull() ?: 0L
                         DiskPartition(
-                            mountPoint  = p[0],
+                            mountPoint  = mount,
                             totalMb     = mb(p[1]),
                             usedMb      = mb(p[2]),
                             availMb     = mb(p[3]),
@@ -150,7 +172,7 @@ suspend fun fetchExtendedStats(settings: SettingsManager): ExtendedStats? =
                     } else null
                 }?.toList() ?: emptyList()
 
-            ExtendedStats(base, gpuTemp, disks)
+            ExtendedStats(base, disks, netRx, netTx)
         } catch (_: Exception) {
             null
         }
@@ -271,13 +293,47 @@ fun ChartCard(
                     modifier              = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    MiniStat("Min", "${"%.0f".format(values.min())}$unit",              Color(0xFF66BB6A))
-                    MiniStat("Moy", "${"%.0f".format(values.average().toFloat())}$unit", color)
-                    MiniStat("Max", "${"%.0f".format(values.max())}$unit",              Color(0xFFEF5350))
+                    MiniStat(stringResource(R.string.stat_min), "${"%.0f".format(values.min())}$unit",              Color(0xFF66BB6A))
+                    MiniStat(stringResource(R.string.stat_avg), "${"%.0f".format(values.average().toFloat())}$unit", color)
+                    MiniStat(stringResource(R.string.stat_max), "${"%.0f".format(values.max())}$unit",              Color(0xFFEF5350))
                 }
             }
         }
     }
+}
+
+@Composable
+fun NetworkCard(rxSpeed: Long, txSpeed: Long) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Speed, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Text("Network Speed", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                MiniStat("Download", formatSpeed(rxSpeed), Color(0xFF4CAF50))
+                MiniStat("Upload", formatSpeed(txSpeed), Color(0xFF2196F3))
+            }
+        }
+    }
+}
+
+fun formatSpeed(bytesPerSec: Long): String {
+    if (bytesPerSec < 1024) return "$bytesPerSec B/s"
+    val kb = bytesPerSec / 1024.0
+    if (kb < 1024) return String.format("%.1f KB/s", kb)
+    val mb = kb / 1024.0
+    return String.format("%.1f MB/s", mb)
 }
 
 @Composable
@@ -301,29 +357,41 @@ fun DiskBar(disk: DiskPartition) {
         disk.usedPercent >= 70 -> Color(0xFFFF9800)
         else                   -> Color(0xFF66BB6A)
     }
-    fun Long.fmt() = if (this >= 1024) "${"%.1f".format(this / 1024.0)} Go" else "$this Mo"
+    @Composable
+    fun Long.fmt() = if (this >= 1024) {
+        "${"%.1f".format(this / 1024.0)} ${stringResource(R.string.unit_gb)}"
+    } else {
+        "$this ${stringResource(R.string.unit_mb)}"
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            disk.mountPoint,
+            fontFamily = FontFamily.Monospace,
+            style      = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color      = MaterialTheme.colorScheme.primary
+        )
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment     = Alignment.CenterVertically
         ) {
             Text(
-                disk.mountPoint,
-                fontFamily = FontFamily.Monospace,
-                style      = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                "${disk.usedMb.fmt()} / ${disk.totalMb.fmt()} — ${disk.usedPercent}%",
+                "${disk.usedMb.fmt()} / ${disk.totalMb.fmt()}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "${disk.usedPercent}%",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = barColor
             )
         }
         LinearProgressIndicator(
             progress   = { (disk.usedPercent / 100f).coerceIn(0f, 1f) },
-            modifier   = Modifier.fillMaxWidth().height(6.dp),
+            modifier   = Modifier.fillMaxWidth().height(8.dp),
             color      = barColor,
             trackColor = MaterialTheme.colorScheme.surfaceVariant
         )
@@ -336,7 +404,7 @@ fun DiskBar(disk: DiskPartition) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MonitoringScreen(settings: SettingsManager, onClose: () -> Unit) {
+fun MonitoringScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: () -> Unit) {
 
     val cpuHistory  = remember { mutableStateListOf<Float>() }
     val ramHistory  = remember { mutableStateListOf<Float>() }
@@ -346,11 +414,26 @@ fun MonitoringScreen(settings: SettingsManager, onClose: () -> Unit) {
     var loading by remember { mutableStateOf(value = true) }
     var error   by remember { mutableStateOf(value = false) }
 
+    var lastNetRx by remember { mutableLongStateOf(0L) }
+    var lastNetTx by remember { mutableLongStateOf(0L) }
+    var rxSpeed by remember { mutableLongStateOf(0L) }
+    var txSpeed by remember { mutableLongStateOf(0L) }
+
     LaunchedEffect(Unit) {
         while (true) {
             val stats = fetchExtendedStats(settings)
 
             if (stats != null) {
+                if (lastNetRx > 0) {
+                    val deltaRx = stats.netRxBytes - lastNetRx
+                    val deltaTx = stats.netTxBytes - lastNetTx
+                    val interval = settings.tempRefreshMs / 1000.0
+                    rxSpeed = if (deltaRx >= 0) (deltaRx / interval).toLong() else 0
+                    txSpeed = if (deltaTx >= 0) (deltaTx / interval).toLong() else 0
+                }
+                lastNetRx = stats.netRxBytes
+                lastNetTx = stats.netTxBytes
+
                 current = stats
                 loading = false
                 error   = false
@@ -375,155 +458,143 @@ fun MonitoringScreen(settings: SettingsManager, onClose: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title          = { Text("Monitoring avancé") },
+                title          = { Text(stringResource(R.string.monitoring_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    IconButton(onClick = onOpenMenu) {
+                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
         }
     ) { padding ->
-        Column(
-            modifier            = Modifier
-                .padding(padding)
-                .padding(16.dp)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-
-            if (loading) {
-                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+        AnimatedContent(
+            targetState = loading,
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "monitoring_main_transition"
+        ) { isLoading ->
+            if (isLoading) {
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(strokeWidth = 3.dp, modifier = Modifier.size(48.dp))
                         Text(
-                            "Première lecture en cours…",
-                            style = MaterialTheme.typography.bodySmall,
+                            stringResource(R.string.loading_stats),
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-            }
+            } else {
+                Column(
+                    modifier            = Modifier
+                        .padding(padding)
+                        .padding(horizontal = 16.dp)
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Spacer(Modifier.height(8.dp))
 
-            if (error) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    if (error) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(Icons.Filled.Error, null, tint = MaterialTheme.colorScheme.error)
+                                Text(
+                                    stringResource(R.string.error_fetch_stats),
+                                    color    = MaterialTheme.colorScheme.onErrorContainer,
+                                    style    = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                    }
+
+                    // ── CPU ──────────────────────────────────────────────────────
+                    AnimatedVisibility(visible = cpuHistory.isNotEmpty()) {
+                        ChartCard(
+                            title    = stringResource(R.string.cpu_load_title, current?.base?.cpuPercent ?: 0),
+                            values   = cpuHistory.toList(),
+                            color    = Color(0xFF2196F3),
+                            maxValue = 100f,
+                            unit     = "%"
+                        )
+                    }
+
+                    // ── RAM ──────────────────────────────────────────────────────
+                    AnimatedVisibility(visible = ramHistory.isNotEmpty()) {
+                        val ramPct = current?.let {
+                            if (it.base.ramTotalMb > 0) it.base.ramUsedMb * 100 / it.base.ramTotalMb else 0
+                        } ?: 0
+                        ChartCard(
+                            title    = stringResource(
+                                R.string.ram_usage_title,
+                                current?.base?.ramUsedMb ?: 0,
+                                current?.base?.ramTotalMb ?: 0,
+                                ramPct
+                            ),
+                            values   = ramHistory.toList(),
+                            color    = Color(0xFF9C27B0),
+                            maxValue = 100f,
+                            unit     = "%"
+                        )
+                    }
+
+                    // ── Température CPU ──────────────────────────────────────────
+                    AnimatedVisibility(visible = tempHistory.isNotEmpty()) {
+                        ChartCard(
+                            title    = stringResource(R.string.temp_title, current?.base?.tempCelsius ?: 0.0),
+                            values   = tempHistory.toList(),
+                            color    = Color(0xFFF44336),
+                            maxValue = 90f,
+                            unit     = "°C"
+                        )
+                    }
+
+                    // ── Réseau ───────────────────────────────────────────────────
+                    NetworkCard(rxSpeed, txSpeed)
+
+                    // ── Disques ──────────────────────────────────────────────────
+                    val disks = current?.disks
+                    if (!disks.isNullOrEmpty()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(
+                                modifier            = Modifier.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Filled.Storage, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    Text(stringResource(R.string.storage_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                }
+                                disks.forEach { DiskBar(it) }
+                            }
+                        }
+                    }
+
+                    // ── Légende refresh ──────────────────────────────────────────
+                    val intervalSec = settings.tempRefreshMs / 1000
                     Text(
-                        "⚠️ Impossible de récupérer les statistiques. Vérifiez la connexion SSH.",
-                        modifier = Modifier.padding(16.dp),
-                        color    = MaterialTheme.colorScheme.onErrorContainer,
-                        style    = MaterialTheme.typography.bodyMedium
+                        stringResource(R.string.refresh_history_legend, intervalSec),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(bottom = 24.dp)
                     )
                 }
             }
-
-            // ── CPU ──────────────────────────────────────────────────────
-            if (cpuHistory.isNotEmpty()) {
-                ChartCard(
-                    title    = "🖥️ CPU — ${current?.base?.cpuPercent ?: 0}%",
-                    values   = cpuHistory.toList(),
-                    color    = Color(0xFF42A5F5),
-                    maxValue = 100f,
-                    unit     = "%"
-                )
-            }
-
-            // ── RAM ──────────────────────────────────────────────────────
-            if (ramHistory.isNotEmpty()) {
-                val ramPct = current?.let {
-                    if (it.base.ramTotalMb > 0) it.base.ramUsedMb * 100 / it.base.ramTotalMb else 0
-                } ?: 0
-                ChartCard(
-                    title    = "🧠 RAM — ${current?.base?.ramUsedMb ?: 0}/${current?.base?.ramTotalMb ?: 0} Mo ($ramPct%)",
-                    values   = ramHistory.toList(),
-                    color    = Color(0xFFAB47BC),
-                    maxValue = 100f,
-                    unit     = "%"
-                )
-            }
-
-            // ── Température CPU ──────────────────────────────────────────
-            if (tempHistory.isNotEmpty()) {
-                ChartCard(
-                    title    = "🌡️ Temp CPU — ${"%.1f".format(current?.base?.tempCelsius ?: 0.0)}°C",
-                    values   = tempHistory.toList(),
-                    color    = Color(0xFFEF5350),
-                    maxValue = 90f,
-                    unit     = "°C"
-                )
-            }
-
-            // ── GPU VideoCore ────────────────────────────────────────────
-            current?.gpuTempCelsius?.let { gpuTemp ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier              = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text("🎮 GPU VideoCore", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                when {
-                                    gpuTemp >= 75 -> "🔥 Surchauffe"
-                                    gpuTemp >= 60 -> "♨️ Chaud"
-                                    gpuTemp >= 45 -> "🌡️ Tiède"
-                                    else          -> "✅ Normal"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Text(
-                            "${"%.1f".format(gpuTemp)}°C",
-                            style      = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color      = monitorTempColor(gpuTemp)
-                        )
-                    }
-                }
-            }
-
-            // ── Disques ──────────────────────────────────────────────────
-            val disks = current?.disks
-            if (!disks.isNullOrEmpty()) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier            = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Text("💾 Espace disque", style = MaterialTheme.typography.titleMedium)
-                        disks.forEach { DiskBar(it) }
-                    }
-                }
-            }
-
-            // ── Légende refresh ──────────────────────────────────────────
-            if (!loading) {
-                val intervalSec = settings.tempRefreshMs / 1000
-                val durationMin = MAX_HISTORY * intervalSec / 60
-                Text(
-                    "⏱ Rafraîchissement toutes les $intervalSec s · Historique $durationMin min (${cpuHistory.size}/$MAX_HISTORY points)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  Helper couleur température
-// ══════════════════════════════════════════════════════════════════════════════
-
-private fun monitorTempColor(celsius: Double): Color = when {
-    celsius >= 75.0 -> Color(0xFFEF5350)
-    celsius >= 60.0 -> Color(0xFFFF9800)
-    celsius >= 45.0 -> Color(0xFFFFEB3B)
-    else            -> Color(0xFF66BB6A)
 }

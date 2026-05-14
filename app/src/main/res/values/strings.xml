@@ -1,7 +1,325 @@
 <resources>
     <string name="app_name">RaspberryController</string>
-    <string name="desc_widget_stats">Surveillance CPU, RAM et Température en temps réel.</string>
-    <string name="desc_widget_pihole">Contrôle rapide et statistiques de blocage Pi-hole.</string>
-    <string name="desc_widget_wireguard">Activer/Désactiver le VPN WireGuard et voir les clients.</string>
-    <string name="desc_widget_sensors">Affichage des sondes DS18B20 et DHT22.</string>
+    <string name="desc_widget_stats">Real-time CPU, RAM, and Temperature monitoring.</string>
+    <string name="desc_widget_pihole">Quick control and Pi-hole blocking statistics.</string>
+    <string name="desc_widget_wireguard">Enable/Disable WireGuard VPN and view clients.</string>
+    <string name="desc_widget_sensors">Display DS18B20 and DHT22 sensors.</string>
+
+    <!-- Monitoring Screen -->
+    <string name="monitoring_title">Advanced Monitoring</string>
+    <string name="back_action">Back</string>
+    <string name="loading_stats">Reading system sensors&#8230;</string>
+    <string name="error_fetch_stats">Unable to retrieve statistics. Check your Raspberry Pi.</string>
+    <string name="cpu_load_title">🖥️ CPU Load — %1$d%%</string>
+    <string name="ram_usage_title">🧠 RAM Memory — %1$d/%2$d MB (%3$d%%)</string>
+    <string name="temp_title">🌡️ CPU Temperature — %1$.1f°C</string>
+    <string name="storage_title">Storage Space</string>
+    <string name="refresh_history_legend">Updated every %1$d s · 10 min sliding history</string>
+    <string name="stat_min">Min</string>
+    <string name="stat_avg">Avg</string>
+    <string name="stat_max">Max</string>
+    <string name="unit_mb">MB</string>
+    <string name="unit_gb">GB</string>
+
+    <!-- General / Navigation -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_about">About</string>
+    <string name="nav_terminal">Terminal</string>
+    <string name="nav_monitoring">Monitoring</string>
+    <string name="nav_docker">Docker</string>
+    <string name="nav_pihole">Pi-hole</string>
+    <string name="nav_wireguard">WireGuard</string>
+    <string name="nav_notifs">Notifications</string>
+    <string name="nav_pwm">PWM Control</string>
+    <string name="nav_gpio_planner">GPIO Planner</string>
+    <string name="nav_sensors">Sensors</string>
+    <string name="nav_file_manager">File Manager</string>
+    <string name="action_close">Close</string>
+    <string name="action_back">Back</string>
+    <string name="action_retry">Retry</string>
+    <string name="error_binary_file">Editing is not supported for this file type (binary).</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_add">Add</string>
+    <string name="action_save">Save Configuration</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_move">Move</string>
+    <string name="action_start">Start</string>
+    <string name="action_stop">Stop</string>
+
+    <!-- Main Dashboard -->
+    <string name="status_online">ONLINE</string>
+    <string name="status_syncing">Syncing&#8230;</string>
+    <string name="status_lost_connection">Connection lost</string>
+    <string name="cpu_load">CPU Load</string>
+    <string name="ram_memory">RAM Memory</string>
+    <string name="terminal_card_title">SSH Terminal Console</string>
+    <string name="section_gpio">GPIO Control</string>
+    <string name="section_services">Services &amp; Servers</string>
+    <string name="section_config">Configuration</string>
+    <string name="drawer_footer">SSH Port: %1$d  ·  v%2$s</string>
+
+    <!-- Update Dialog -->
+    <string name="update_title">Update</string>
+    <string name="update_available_title">Update Available</string>
+    <string name="update_error">Error during download</string>
+    <string name="update_success">Download complete!</string>
+    <string name="update_installing">Installation will start&#8230;</string>
+    <string name="update_downloading">Downloading&#8230;</string>
+    <string name="update_wait">Please wait&#8230;</string>
+    <string name="update_message">A new version is available: v%1$s</string>
+    <string name="update_changelog">\n\n📋 What\'s new:\n%1$s</string>
+    <string name="update_prompt">\n\nDo you want to install it?</string>
+    <string name="update_action_now">Update</string>
+    <string name="update_action_later">Later</string>
+
+    <!-- Biometric Lock -->
+    <string name="auth_required">Authentication required to access the application.</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_ssh_title">SSH Connection</string>
+    <string name="settings_ip_label">IP Address</string>
+    <string name="settings_port_label">SSH Port</string>
+    <string name="settings_user_label">Username</string>
+    <string name="settings_pass_label">Password</string>
+    <string name="settings_timeout_title">SSH Timeout</string>
+    <string name="settings_theme_title">Theme</string>
+    <string name="settings_security_title">Security</string>
+    <string name="settings_biometric_label">Biometrics</string>
+    <string name="settings_refresh_title">Temperature Refresh</string>
+    <string name="settings_shortcuts_title">Terminal Shortcuts</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+
+    <!-- About Screen -->
+    <string name="about_developer">Developer</string>
+    <string name="about_github">GitHub Repository</string>
+    <string name="about_copyright">© 2026 RillMaster</string>
+
+    <!-- Shortcut Dialog -->
+    <string name="shortcut_dialog_label">Button Label</string>
+    <string name="shortcut_dialog_command">SSH Command</string>
+    <string name="shortcut_example_label">ex: reboot</string>
+    <string name="shortcut_example_command">ex: sudo reboot</string>
+
+    <!-- Extensions & Security -->
+    <string name="nav_logs">Logs Viewer</string>
+    <string name="nav_security">Security Center</string>
+    <string name="nav_ssh_keys">SSH Keys</string>
+    <string name="nav_fail2ban">Fail2Ban</string>
+    <string name="nav_ufw">UFW Firewall</string>
+    <string name="section_security">Security</string>
+
+    <string name="settings_extensions_title">Extensions</string>
+    <string name="settings_network_speed_label">Network Speed</string>
+    <string name="settings_log_viewer_label">Log Viewer</string>
+    <string name="settings_fail2ban_label">Fail2Ban Status</string>
+    <string name="settings_ufw_label">UFW Firewall</string>
+
+    <!-- Docker Screen -->
+    <string name="docker_title">Docker Containers</string>
+    <string name="docker_refresh">Refresh</string>
+    <string name="docker_loading">Querying Docker daemon&#8230;</string>
+    <plurals name="docker_active_count">
+        <item quantity="one">%1$d ACTIVE</item>
+        <item quantity="other">%1$d ACTIVES</item>
+    </plurals>
+    <plurals name="docker_stopped_count">
+        <item quantity="one">%1$d STOPPED</item>
+        <item quantity="other">%1$d STOPPED</item>
+    </plurals>
+    <string name="docker_error">Docker Error</string>
+    <string name="docker_none">No containers found</string>
+    <string name="docker_action_starting">Starting&#8230;</string>
+    <string name="docker_action_stopping">Stopping&#8230;</string>
+    <string name="docker_action_restarting">Restarting&#8230;</string>
+    <string name="docker_action_ongoing">Action in progress&#8230;</string>
+    <string name="docker_start">Start</string>
+    <string name="docker_stop">Stop</string>
+    <string name="docker_restart">Restart</string>
+    <string name="docker_status_running">RUNNING</string>
+    <string name="docker_status_stopped">STOPPED</string>
+
+    <!-- Sensors Screen -->
+    <string name="sensors_title">Real-time Sensors</string>
+    <string name="sensor_ds18b20_name">DS18B20 — Probe Temperature</string>
+    <string name="sensor_dht22_temp_name">DHT22 — Temperature</string>
+    <string name="sensor_dht22_hum_name">DHT22 — Humidity</string>
+    <string name="wiring_diagram_action">Wiring Diagram</string>
+    <string name="polling_active">Polling active every %1$ds</string>
+    <string name="polling_stopped">Polling stopped</string>
+    <string name="status_online_label">Online</string>
+    <string name="status_offline_label">Offline</string>
+    <string name="waiting_for_data">Waiting for data…</string>
+    <string name="stat_min_label">Min: %1$s</string>
+    <string name="stat_max_label">Max: %1$s</string>
+    <string name="wiring_diagram_title">Wiring Diagram</string>
+    <string name="wiring_ds18b20_title">DS18B20 — Probe Temperature</string>
+    <string name="wiring_ds18b20_desc">Waterproof digital 1-Wire sensor. A 4.7 kΩ pull-up resistor between DATA and VCC is mandatory.</string>
+    <string name="wiring_ds18b20_note">Enable 1-Wire bus: add dtoverlay=w1-gpio in /boot/config.txt then reboot.</string>
+    <string name="wiring_dht22_title">DHT22 — Temperature &amp; Humidity</string>
+    <string name="wiring_dht22_desc">AM2302 digital sensor. A 10 kΩ pull-up resistor between DATA and VCC is recommended.</string>
+    <string name="wiring_dht22_note">The GPIO number is configurable in the Python code (currently GPIO4).</string>
+    <string name="wiring_rpi_gpio_ref">Raspberry Pi — GPIO Reference</string>
+    <string name="wiring_pinout_tip">💡 Useful command: pinout (in the RPi terminal)</string>
+    <string name="wiring_col_sensor">Sensor</string>
+    <string name="wiring_col_rpi">Raspberry Pi</string>
+    <string name="wiring_pin_vcc_red">VCC (red wire)</string>
+    <string name="wiring_pin_33v_p1">3.3V — Physical Pin 1</string>
+    <string name="wiring_pin_gnd_black">GND (black wire)</string>
+    <string name="wiring_pin_gnd_p6">GND — Physical Pin 6</string>
+    <string name="wiring_pin_data_yellow">DATA (yellow wire)</string>
+    <string name="wiring_pin_gpio4_p7">GPIO4 — Physical Pin 7</string>
+    <string name="wiring_pin_p1_vcc">Pin 1 — VCC</string>
+    <string name="wiring_pin_p2_data">Pin 2 — DATA</string>
+    <string name="wiring_pin_p3_nc">Pin 3 — NC</string>
+    <string name="wiring_not_connected">Not connected</string>
+    <string name="wiring_pin_p4_gnd">Pin 4 — GND</string>
+    <string name="wiring_resistors_title">Pull-up Resistors</string>
+    <string name="wiring_resistors_desc">• DS18B20: 4.7 kΩ between DATA and VCC (mandatory)\n• DHT22: 10 kΩ between DATA and VCC (recommended)\n\nWithout these resistors, sensors may be unstable or non-responsive.</string>
+
+    <!-- Pi-hole Screen -->
+    <string name="pihole_title">Pi-hole</string>
+    <string name="status_active">ACTIVE</string>
+    <string name="status_inactive">INACTIVE</string>
+    <string name="pihole_config_desc">Pi-hole Configuration</string>
+    <string name="connecting_to_pihole">Connecting to Pi-hole…</string>
+    <string name="error_pihole_connection">Unable to connect to Raspberry Pi.</string>
+    <string name="error_pihole_password">Incorrect Pi-hole password.\nConfigure it via the icon.</string>
+    <string name="error_stats_prefix">Stats Error:\n%1$s</string>
+    <string name="error_unexpected_response">Unexpected response:\n%1$s</string>
+    <string name="pihole_config_password">Configure Pi-hole password</string>
+    <string name="pihole_active_msg">Pi-hole active</string>
+    <string name="pihole_inactive_msg">Pi-hole inactive</string>
+    <string name="error_state_change">Error during state change.</string>
+    <string name="stats_today">Today\'s Statistics</string>
+    <string name="dns_queries">DNS Queries</string>
+    <string name="ads_blocked">Ads Blocked</string>
+    <string name="cached_domains">Cached Domains</string>
+    <string name="clients_seen">Seen Clients</string>
+    <string name="blocking_list">Blocklist</string>
+    <string name="domains_blocked_count">%1$s blocked domains</string>
+    <string name="unique_domains_seen">Unique domains seen: %1$s</string>
+    <string name="blocking_rate">Blocking Rate</string>
+    <string name="blocking_summary">%1$s requests blocked out of %2$s today</string>
+    <string name="pihole_status_active">Pi-hole active</string>
+    <string name="pihole_status_inactive">Pi-hole inactive</string>
+    <string name="pihole_filtering_active">DNS filtering is in progress</string>
+    <string name="pihole_filtering_inactive">All traffic passes without filtering</string>
+
+    <!-- WireGuard Screen -->
+    <string name="wg_title">WireGuard</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_add_client">Add Client</string>
+    <string name="wg_started">Started</string>
+    <string name="wg_stopped">Stopped</string>
+    <string name="wg_status_configured">Configured</string>
+    <string name="wg_status_connected">Connected</string>
+    <string name="wg_clients_count">Clients (%1$d)</string>
+    <string name="wg_restarting">Restarting WireGuard…</string>
+    <string name="wg_please_wait">Please wait…</string>
+    <string name="wg_client_added_success">Client added successfully (Scanned public key)</string>
+    <string name="wg_client_deleted">Client deleted</string>
+    <string name="wg_error_deletion">Error during deletion</string>
+    <string name="wg_client_renamed">Client renamed</string>
+    <string name="wg_error_renaming">Error during renaming</string>
+    <string name="wg_config_title">Client Configuration</string>
+    <string name="wg_config_copy_close">Copy and Close</string>
+    <string name="wg_config_copied">Configuration copied</string>
+    <string name="wg_new_client_title">New Client</string>
+    <string name="wg_client_name_label">Client Name</string>
+    <string name="wg_client_name_hint">ex: Pc RillMaster</string>
+    <string name="wg_endpoint_label">Endpoint (Public IP or DNS)</string>
+    <string name="wg_endpoint_hint">ex: 82.225.223.88</string>
+    <string name="wg_port_label">Interface Port (Server)</string>
+    <string name="wg_dns_label">DNS</string>
+    <string name="wg_allowed_ips_label">Allowed IPs (Client)</string>
+    <string name="wg_rename_title">Edit Name</string>
+    <string name="wg_new_name_label">New Name</string>
+    <string name="wg_port_display">Port: %1$d</string>
+    <string name="wg_active_handshake">Active · %1$s</string>
+    <string name="wg_inactive_handshake">Inactive · %1$s</string>
+    <string name="qr_code_error">Error generating QR Code</string>
+
+    <!-- Terminal Screen -->
+    <string name="status_connecting">Connecting...</string>
+    <string name="status_connected_terminal">Connected</string>
+    <string name="status_reconnecting">Reconnecting (%1$d/%2$d)...</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_error">Error</string>
+    <string name="terminal_title">SSH Terminal</string>
+    <string name="action_paste">Paste</string>
+    <string name="action_reconnect">Reconnect</string>
+    <string name="action_bars">Bars</string>
+    <string name="action_rotation">Rotation</string>
+    <string name="snippet_new_title">New snippet</string>
+    <string name="snippet_label_label">Display Name</string>
+    <string name="snippet_command_label">Command</string>
+    <string name="action_ok">OK</string>
+    <string name="snippet_add_title">Add snippet</string>
+    <string name="snippet_edit_title">Edit snippet</string>
+    <string name="ctrl_active_msg">^ Ctrl active — type a letter</string>
+    <string name="alt_active_msg">Alt active — type a key</string>
+    <string name="action_add_snippet">＋ snippet</string>
+    <string name="msg_connecting_to">Connecting to %1$s:%2$d...</string>
+    <string name="msg_connection_lost_retry">⚠ Connection lost — attempt %1$d/%2$d in %3$d s...</string>
+    <string name="msg_reconnect_failed">✗ Reconnection abandoned after %1$d attempts.</string>
+    <string name="msg_manual_reconnect">↺ Manual reconnection...</string>
+    <string name="msg_check_ssh_settings">Check SSH settings.</string>
+
+    <!-- PWM Slider Screen -->
+    <string name="pwm_led_label">LED Brightness</string>
+    <string name="pwm_fan_label">Fan</string>
+    <string name="pwm_description">Power control via PWM (BCM numbering)</string>
+    <string name="pwm_pin_bcm">Pin BCM %1$d</string>
+    <string name="pwm_apply_success">✅ %1$s → %2$d%3$s</string>
+    <string name="pwm_stop_success">⏹ %1$s stopped</string>
+    <string name="action_apply">Apply</string>
+    <string name="action_ban">Ban</string>
+    <string name="action_unban">Unban</string>
+    <string name="action_ban_ip">Ban an IP</string>
+    <string name="action_ongoing">Action in progress…</string>
+    <string name="label_banned_ips_in">Banned IPs in %1$s</string>
+    <string name="label_no_jail_selected">No jail selected</string>
+    <string name="label_no_ips_banned">No IPs banned currently.</string>
+    <string name="label_select_jail_first">Please select or add a jail.</string>
+    <string name="label_jail_name">Jail Name</string>
+    <string name="label_ip_address">IP Address</string>
+    <string name="error_fetch_prefix">Error: %1$s</string>
+    <string name="error_unban_failed">Unban failed: %1$s</string>
+    <string name="error_ban_failed">Ban failed: %1$s</string>
+
+    <!-- GPIO Planner Screen -->
+    <string name="action_sync">Synchronize</string>
+    <string name="schedule_new_rule">New Rule</string>
+    <string name="schedule_none">No scheduled rules</string>
+    <string name="schedule_help_tap_plus">Press + to create one</string>
+    <string name="schedule_summary">Pin %1$d — %2$s at %3$s</string>
+    <string name="schedule_every_day">Every day</string>
+    <string name="schedule_rule_name">Rule Name</string>
+    <string name="schedule_pin_bcm_label">Pin GPIO (BCM)</string>
+    <string name="action_turn_on">Turn On</string>
+    <string name="action_turn_off">Turn Off</string>
+    <string name="schedule_time_label">Time: %1$s</string>
+    <string name="schedule_days_help">Days (empty = every day)</string>
+    <string name="day_mon">Mo</string>
+    <string name="day_tue">Tu</string>
+    <string name="day_wed">We</string>
+    <string name="day_thu">Th</string>
+    <string name="day_fri">Fr</string>
+    <string name="day_sat">Sa</string>
+    <string name="day_sun">Su</string>
+    <string name="sync_success">✅ Cron synchronized</string>
+    <string name="rule_enabled">✅ Rule enabled</string>
+    <string name="rule_disabled">⏸ Rule disabled</string>
+    <string name="rule_deleted">🗑 Rule deleted</string>
+    <string name="rule_added">✅ Rule added and enabled</string>
+    <string name="error_crontab_prefix">❌ Crontab error: %1$s</string>
+
+    <!-- General Extras -->
+    <string name="version_unknown">Unknown</string>
+    <string name="logo_content_description">App Logo</string>
+    <string name="open_menu">Open menu</string>
+    <string name="version_label">Version %1$s</string>
 </resources>

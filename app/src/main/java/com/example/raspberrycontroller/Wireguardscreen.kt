@@ -14,11 +14,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import android.graphics.Bitmap
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -213,14 +223,30 @@ except Exception as e:
     return res.split("\n").any { it.trim() == "ok" }
 }
 
-internal suspend fun addWgPeer(settings: SettingsManager, iface: String, clientName: String, dns: String, allowed: String, endpointHost: String, endpointPort: Int): Result<String> {
+internal suspend fun addWgPeer(
+    settings: SettingsManager,
+    iface: String,
+    clientName: String,
+    dns: String,
+    allowed: String,
+    endpointHost: String,
+    endpointPort: Int,
+    scannedPublicKey: String? = null
+): Result<String> {
+    val pubParam = scannedPublicKey ?: ""
     val script = """
 python3 -c "
 import subprocess, re, sys
 def run(cmd): return subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.DEVNULL).strip()
 try:
-    priv = run('wg genkey')
-    pub = run('echo ' + priv + ' | wg pubkey')
+    pub_input = '$pubParam'
+    if pub_input:
+        pub = pub_input
+        priv = ''
+    else:
+        priv = run('wg genkey')
+        pub = run('echo ' + priv + ' | wg pubkey')
+    
     conf_path = f'/etc/wireguard/$iface.conf'
     conf = run(f'echo \"${settings.password}\" | sudo -S cat {conf_path}')
     
@@ -270,6 +296,11 @@ except Exception as e:
     val p = okLine.trim().split("|")
     val status = fetchWgStatus(settings) ?: return Result.failure(Exception("Impossible de récupérer le statut pour finaliser la config"))
     
+    // Si on a scanné une clé publique, on ne peut pas générer la config client complète (manque sa clé privée)
+    if (scannedPublicKey != null && p[1].isEmpty()) {
+        return Result.success("PEER_ADDED_ONLY")
+    }
+
     // Si l'hôte contient déjà un port (ex: 1.2.3.4:5678), on ne rajoute pas le port par défaut
     val finalEndpoint = if (endpointHost.contains(":")) endpointHost else "$endpointHost:$endpointPort"
 
@@ -289,10 +320,16 @@ PersistentKeepalive = 25
     return Result.success(config)
 }
 
+internal suspend fun getPublicKeyFromPrivate(settings: SettingsManager, privateKey: String): String? {
+    val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "echo '$privateKey' | wg pubkey", settings.sshTimeoutMs).trim()
+    return if (res.length == 44 && res.endsWith("=")) res else null
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
+fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var wgStatus by remember { mutableStateOf<WgStatus?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -314,11 +351,11 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("WireGuard", fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
+                title = { Text(stringResource(R.string.nav_wireguard), fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = onOpenMenu) { Icon(Icons.Default.Menu, stringResource(R.string.open_menu)) } },
                 actions = {
                     IconButton(onClick = { refresh() }, enabled = !loading) {
-                        if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp)) else Icon(Icons.Default.Refresh, "Refresh")
+                        if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp)) else Icon(Icons.Default.Refresh, stringResource(R.string.action_refresh))
                     }
                 }
             )
@@ -326,7 +363,7 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
         floatingActionButton = {
             if (wgStatus != null) {
                 FloatingActionButton(onClick = { showAddDialog = true }, containerColor = WgGreen, contentColor = Color.White) {
-                    Icon(Icons.Default.Add, "Ajouter un client")
+                    Icon(Icons.Default.Add, stringResource(R.string.action_add_client))
                 }
             }
         },
@@ -346,32 +383,28 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
                             toggling = true
                             if (toggleWireGuard(settings, s.interfaceName, !s.isUp)) {
                                 delay(1000); refresh()
-                                snackMsg = if (!s.isUp) "Démarré" else "Arrêté"
-                            } else snackMsg = "Erreur"
+                                snackMsg = if (!s.isUp) context.getString(R.string.wg_started) else context.getString(R.string.wg_stopped)
+                            } else snackMsg = context.getString(R.string.update_error)
                             toggling = false
                         }
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        WgStatCard("Configurés", s.peers.size.toString(), Icons.Default.Group, WgBlue, Modifier.weight(1f))
-                        WgStatCard("Connectés", s.peers.count { it.isOnline }.toString(), Icons.Default.Wifi, WgGreen, Modifier.weight(1f))
+                        WgStatCard(stringResource(R.string.wg_status_configured), s.peers.size.toString(), Icons.Default.Group, WgBlue, Modifier.weight(1f))
+                        WgStatCard(stringResource(R.string.wg_status_connected), s.peers.count { it.isOnline }.toString(), Icons.Default.Wifi, WgGreen, Modifier.weight(1f))
                     }
-                    Text("Clients (${s.peers.size})", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.wg_clients_count, s.peers.size), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     s.peers.forEach { peer ->
                         WgPeerCard(peer, onRename = { showRenameDialog = peer }) {
                             scope.launch {
-                                restarting = true
+                                loading = true
                                 if (deleteWgPeer(settings, s.interfaceName, peer.publicKey)) {
-                                    if (restartWireGuard(settings, s.interfaceName)) {
-                                        delay(1000)
-                                        refresh()
-                                        snackMsg = "Client supprimé et WireGuard redémarré"
-                                    } else {
-                                        snackMsg = "Client supprimé mais erreur au redémarrage"
-                                    }
+                                    delay(500)
+                                    refresh()
+                                    snackMsg = context.getString(R.string.wg_client_deleted)
                                 } else {
-                                    snackMsg = "Erreur lors de la suppression"
+                                    snackMsg = context.getString(R.string.wg_error_deletion)
                                 }
-                                restarting = false
+                                loading = false
                             }
                         }
                     }
@@ -396,8 +429,8 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             CircularProgressIndicator()
-                            Text("Redémarrage de WireGuard...", fontWeight = FontWeight.Medium)
-                            Text("Veuillez patienter...", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.wg_restarting), fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.wg_please_wait), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -410,15 +443,28 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
             defaultEndpoint = settings.host,
             defaultPort = wgStatus?.listenPort ?: 51820,
             onDismiss = { showAddDialog = false }
-        ) { name, dns, allowed, endpoint, port ->
+        ) { name, dns, allowed, endpoint, port, pubKey ->
             showAddDialog = false; loading = true
             scope.launch {
-                val result = addWgPeer(settings, wgStatus?.interfaceName ?: "wg0", name, dns, allowed, endpoint, port)
+                var finalPubKey = pubKey
+                // Si on a scanné une clé privée, on en déduit la publique sur le serveur
+                if (pubKey != null && pubKey.length == 44 && pubKey.endsWith("=")) {
+                    // On vérifie si c'est une clé privée ou publique en demandant au serveur
+                    // (wg pubkey sur une clé publique ne change rien, sur une privée ça donne la publique)
+                    val derived = getPublicKeyFromPrivate(settings, pubKey)
+                    if (derived != null) finalPubKey = derived
+                }
+
+                val result = addWgPeer(settings, wgStatus?.interfaceName ?: "wg0", name, dns, allowed, endpoint, port, finalPubKey)
                 result.onSuccess { config ->
-                    showConfigDialog = config
+                    if (config == "PEER_ADDED_ONLY") {
+                        snackMsg = context.getString(R.string.wg_client_added_success)
+                    } else {
+                        showConfigDialog = config
+                    }
                     refresh()
                 }.onFailure { 
-                    snackMsg = it.message ?: "Erreur lors de la création"
+                    snackMsg = it.message ?: context.getString(R.string.docker_error)
                 }
                 loading = false
             }
@@ -434,9 +480,9 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
             scope.launch {
                 if (renameWgPeer(settings, wgStatus?.interfaceName ?: "wg0", peer.publicKey, newName)) {
                     refresh()
-                    snackMsg = "Client renommé"
+                    snackMsg = context.getString(R.string.wg_client_renamed)
                 } else {
-                    snackMsg = "Erreur lors du renommage"
+                    snackMsg = context.getString(R.string.wg_error_renaming)
                 }
                 loading = false
             }
@@ -445,80 +491,130 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit) {
 
     showConfigDialog?.let { config ->
         val context = androidx.compose.ui.platform.LocalContext.current
+        var mode by remember { mutableStateOf("text") } // "text" ou "qr"
+
         AlertDialog(
             onDismissRequest = { showConfigDialog = null },
-            title = { Text("Configuration Client") },
-            text = { Text(config, fontFamily = FontFamily.Monospace, fontSize = 12.sp) },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.wg_config_title))
+                    Row {
+                        IconButton(onClick = { mode = "text" }) {
+                            Icon(Icons.Default.ContentCopy, "Texte", tint = if (mode == "text") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                        }
+                        IconButton(onClick = { mode = "qr" }) {
+                            Icon(Icons.Default.QrCode, "QR Code", tint = if (mode == "qr") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    if (mode == "text") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                config,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                modifier = Modifier.verticalScroll(rememberScrollState())
+                            )
+                        }
+                    } else {
+                        val qrBitmap = remember(config) { generateQrCode(config) }
+                        if (qrBitmap != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = qrBitmap.asImageBitmap(),
+                                contentDescription = "QR Code Configuration",
+                                modifier = Modifier.size(240.dp).background(Color.White).padding(8.dp)
+                            )
+                        } else {
+                            Text(stringResource(R.string.qr_code_error))
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 Button(onClick = {
-                    val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    cb.setPrimaryClip(android.content.ClipData.newPlainText("WG Config", config))
-                    showConfigDialog = null
-                    
-                    scope.launch {
-                        restarting = true
-                        if (restartWireGuard(settings, wgStatus?.interfaceName ?: "wg0")) {
-                            delay(1000)
-                            refresh()
-                            snackMsg = "Config copiée et WireGuard redémarré"
-                        } else {
-                            snackMsg = "Config copiée mais erreur au redémarrage"
-                        }
-                        restarting = false
+                    if (mode == "text") {
+                        val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cb.setPrimaryClip(android.content.ClipData.newPlainText("WG Config", config))
+                        snackMsg = context.getString(R.string.wg_config_copied)
                     }
-                }) { Text("Copier et Fermer") }
+                    showConfigDialog = null
+                    refresh()
+                }) {
+                    Text(if (mode == "text") stringResource(R.string.wg_config_copy_close) else stringResource(R.string.action_close))
+                }
             }
-
         )
     }
 }
 
 @Composable
-fun AddPeerDialog(defaultEndpoint: String, defaultPort: Int, onDismiss: () -> Unit, onConfirm: (String, String, String, String, Int) -> Unit) {
+fun AddPeerDialog(
+    defaultEndpoint: String,
+    defaultPort: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, String, String, Int, String?) -> Unit
+) {
     var name by remember { mutableStateOf("") }
     var dns by remember { mutableStateOf("10.0.0.1") }
     var allowed by remember { mutableStateOf("0.0.0.0/0") }
     var endpoint by remember { mutableStateOf(defaultEndpoint) }
     var port by remember { mutableStateOf(defaultPort.toString()) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nouveau Client") },
+        title = { Text(stringResource(R.string.wg_new_client_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Nom du client") },
-                    placeholder = { Text("ex: Pc RillMaster") },
+                    label = { Text(stringResource(R.string.wg_client_name_label)) },
+                    placeholder = { Text(stringResource(R.string.wg_client_name_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = endpoint, 
                     onValueChange = { endpoint = it }, 
-                    label = { Text("Endpoint (IP Publique ou DNS)") },
-                    placeholder = { Text("ex: 82.225.223.88") },
+                    label = { Text(stringResource(R.string.wg_endpoint_label)) },
+                    placeholder = { Text(stringResource(R.string.wg_endpoint_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = port,
                     onValueChange = { if (it.all { char -> char.isDigit() }) port = it },
-                    label = { Text("Port de l'interface (Serveur)") },
+                    label = { Text(stringResource(R.string.wg_port_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = dns, 
                     onValueChange = { dns = it }, 
-                    label = { Text("DNS") },
+                    label = { Text(stringResource(R.string.wg_dns_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = allowed, 
                     onValueChange = { allowed = it }, 
-                    label = { Text("Allowed IPs (Client)") },
+                    label = { Text(stringResource(R.string.wg_allowed_ips_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -526,11 +622,11 @@ fun AddPeerDialog(defaultEndpoint: String, defaultPort: Int, onDismiss: () -> Un
         },
         confirmButton = { 
             Button(
-                onClick = { onConfirm(name, dns, allowed, endpoint, port.toIntOrNull() ?: defaultPort) },
+                onClick = { onConfirm(name, dns, allowed, endpoint, port.toIntOrNull() ?: defaultPort, null) },
                 enabled = endpoint.isNotEmpty() && port.isNotEmpty() && name.isNotEmpty()
-            ) { Text("Créer") } 
+            ) { Text(stringResource(R.string.action_add)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -539,20 +635,20 @@ fun RenamePeerDialog(currentName: String, onDismiss: () -> Unit, onConfirm: (Str
     var name by remember { mutableStateOf(currentName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Modifier le nom") },
+        title = { Text(stringResource(R.string.wg_rename_title)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Nouveau nom") },
+                label = { Text(stringResource(R.string.wg_new_name_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         },
         confirmButton = {
-            Button(onClick = { onConfirm(name) }, enabled = name.isNotEmpty()) { Text("Enregistrer") }
+            Button(onClick = { onConfirm(name) }, enabled = name.isNotEmpty()) { Text(stringResource(R.string.action_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -566,7 +662,7 @@ private fun WgInterfaceCard(status: WgStatus, toggling: Boolean, onToggle: () ->
                     Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(if (status.isUp) WgGreen else WgGrey))
                     Column {
                         Text(status.interfaceName, fontWeight = FontWeight.Bold, fontSize = 18.sp, fontFamily = FontFamily.Monospace)
-                        Text("Port : ${status.listenPort}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.wg_port_display, status.listenPort), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 if (toggling) CircularProgressIndicator(modifier = Modifier.size(32.dp))
@@ -598,10 +694,10 @@ private fun WgPeerCard(peer: WgPeer, onRename: () -> Unit, onDelete: () -> Unit)
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(peer.name, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                    Text(if (peer.isOnline) "Actif · ${peer.lastHandshake}" else "Inactif · ${peer.lastHandshake}", style = MaterialTheme.typography.labelSmall, color = color)
+                    Text(if (peer.isOnline) stringResource(R.string.wg_active_handshake, peer.lastHandshake) else stringResource(R.string.wg_inactive_handshake, peer.lastHandshake), style = MaterialTheme.typography.labelSmall, color = color)
                 }
-                IconButton(onClick = onRename) { Icon(Icons.Default.Edit, "Renommer", modifier = Modifier.size(20.dp)) }
-                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Supprimer", tint = MaterialTheme.colorScheme.error) }
+                IconButton(onClick = onRename) { Icon(Icons.Default.Edit, stringResource(R.string.action_move), modifier = Modifier.size(20.dp)) }
+                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, stringResource(R.string.action_delete), tint = MaterialTheme.colorScheme.error) }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
             WgInfoRow(Icons.Default.Router, "Endpoint", peer.endpoint)
@@ -646,4 +742,20 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_048_576L     -> "%.1f Mo".format(bytes / 1_048_576.0)
     bytes >= 1_024L         -> "%.1f Ko".format(bytes / 1_024.0)
     else                    -> "$bytes o"
+}
+
+private fun generateQrCode(text: String): Bitmap? {
+    return try {
+        val size = 512
+        val bitMatrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size)
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
+        for (x in 0 until size) {
+            for (y in 0 until size) {
+                bitmap.setPixel(x, y, if (bitMatrix.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+            }
+        }
+        bitmap
+    } catch (e: Exception) {
+        null
+    }
 }

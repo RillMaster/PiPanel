@@ -29,7 +29,7 @@ private val DarkColorScheme = darkColorScheme(
     onSurface          = Color(0xFFDCE8F0),
     surfaceVariant     = DarkSurfaceVar,
     onSurfaceVariant   = Color(0xFFB0C4D8),
-    outline            = Color(0xFF4A6077)
+    outline            = Color(0xFF4A6077),
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -49,7 +49,7 @@ private val LightColorScheme = lightColorScheme(
     onSurface          = Color(0xFF161D1E),
     surfaceVariant     = LightSurfaceVar,
     onSurfaceVariant   = Color(0xFF3D5957),
-    outline            = Color(0xFF6F7979)
+    outline            = Color(0xFF6F7979),
 )
 
 @Composable
@@ -62,7 +62,7 @@ fun RaspberryControllerTheme(
     content     : @Composable () -> Unit
 ) {
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        dynamicColor && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }

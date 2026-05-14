@@ -1,5 +1,6 @@
 package com.example.raspberrycontroller
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -17,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -194,21 +196,25 @@ private fun parseStatsOrNull(raw: String): PiHoleStats? {
     )
 }
 
+@SuppressLint("LocalContextGetResourceValueCall")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PiHoleScreen(
     settings     : SettingsManager,
     onClose      : () -> Unit,
-    onOpenConfig : () -> Unit
+    onOpenConfig : () -> Unit,
+    onOpenMenu   : () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
     var stats      by remember { mutableStateOf<PiHoleStats?>(null) }
     var loading    by remember { mutableStateOf(true) }
     var toggling   by remember { mutableStateOf(false) }
-    var errorMsg   by remember { mutableStateOf<String?>(null) }
+    var errorRes   by remember { mutableStateOf<Int?>(null) }
+    var errorArg   by remember { mutableStateOf<String?>(null) }
     var authError  by remember { mutableStateOf(false) }
-    var snackMsg   by remember { mutableStateOf<String?>(null) }
+    var snackRes   by remember { mutableStateOf<Int?>(null) }
     val snackState = remember { SnackbarHostState() }
 
     // 🔥 ANTI-SPAM GLOBAL (IMPORTANT)
@@ -223,7 +229,8 @@ fun PiHoleScreen(
             lastRequestTime = now
 
             loading = true
-            errorMsg = null
+            errorRes = null
+            errorArg = null
             authError = false
 
             val pwd = settings.piHolePassword
@@ -243,24 +250,28 @@ fun PiHoleScreen(
 
             when {
                 raw == null ->
-                    errorMsg = "Impossible de se connecter au Raspberry Pi."
+                    errorRes = R.string.error_pihole_connection
 
                 raw.startsWith("auth_error") || raw.startsWith("no_sid") -> {
                     authError = true
-                    errorMsg = "Mot de passe Pi-hole incorrect.\nConfigurez-le via l'icone."
+                    errorRes = R.string.error_pihole_password
                 }
 
-                raw.startsWith("stats_error") ->
-                    errorMsg = "Erreur stats :\n${raw.substringAfter("|")}"
+                raw.startsWith("stats_error") -> {
+                    errorRes = R.string.error_stats_prefix
+                    errorArg = raw.substringAfter("|")
+                }
 
                 else -> {
                     val parsed = parseStatsOrNull(raw)
                     if (parsed != null) {
                         stats = parsed
-                        errorMsg = null
+                        errorRes = null
+                        errorArg = null
                         authError = false
                     } else {
-                        errorMsg = "Reponse inattendue :\n$raw"
+                        errorRes = R.string.error_unexpected_response
+                        errorArg = raw
                     }
                 }
             }
@@ -288,16 +299,17 @@ fun PiHoleScreen(
                 val result = fetchPiHoleStatus(settings, settings.piHolePassword)
                 if (result != null) {
                     stats = result
-                    errorMsg = null
+                    errorRes = null
+                    errorArg = null
                 }
             }
         }
     }
 
-    LaunchedEffect(snackMsg) {
-        snackMsg?.let {
-            snackState.showSnackbar(it)
-            snackMsg = null
+    LaunchedEffect(snackRes) {
+        snackRes?.let {
+            snackState.showSnackbar(context.run { getString(it) })
+            snackRes = null
         }
     }
 
@@ -307,7 +319,7 @@ fun PiHoleScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Pi-hole", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.pihole_title), fontWeight = FontWeight.Bold)
                         stats?.let { s ->
                             Box(modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
@@ -315,7 +327,7 @@ fun PiHoleScreen(
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                             ) {
                                 Text(
-                                    text = if (s.enabled) "ACTIF" else "INACTIF",
+                                    text = if (s.enabled) stringResource(R.string.status_active) else stringResource(R.string.status_inactive),
                                     fontSize = 10.sp,
                                     color = if (s.enabled) PiHoleGreen else PiHoleRed,
                                     fontWeight = FontWeight.Bold,
@@ -326,17 +338,17 @@ fun PiHoleScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    IconButton(onClick = onOpenMenu) {
+                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
                     }
                 },
                 actions = {
                     IconButton(onClick = onOpenConfig) {
-                        Icon(Icons.Default.Settings, contentDescription = "Configuration Pi-hole")
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.pihole_config_desc))
                     }
                     IconButton(onClick = { refresh() }, enabled = !loading) {
                         if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.Default.Refresh, contentDescription = "Actualiser")
+                        else Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.docker_refresh))
                     }
                 }
             )
@@ -358,18 +370,19 @@ fun PiHoleScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             CircularProgressIndicator()
-                            Text("Connexion a Pi-hole...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.connecting_to_pihole), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
 
-                errorMsg != null -> {
+                errorRes != null -> {
+                    val message = errorArg?.let { stringResource(errorRes!!, it) } ?: stringResource(errorRes!!)
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                         Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Icon(Icons.Default.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                             Column {
-                                Text("Erreur", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                                Text(errorMsg!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                                Text(stringResource(R.string.error_fetch_stats), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
                             }
                         }
                     }
@@ -377,11 +390,11 @@ fun PiHoleScreen(
                         Button(onClick = onOpenConfig, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Configurer le mot de passe Pi-hole")
+                            Text(stringResource(R.string.pihole_config_password))
                         }
                     } else {
                         Button(onClick = { refresh() }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Reessayer")
+                            Text(stringResource(R.string.action_retry))
                         }
                     }
                 }
@@ -400,9 +413,9 @@ fun PiHoleScreen(
                                     delay(1500)
                                     val newStats = fetchPiHoleStatus(settings, settings.piHolePassword)
                                     if (newStats != null) stats = newStats
-                                    snackMsg = if (!s.enabled) "Pi-hole active" else "Pi-hole desactive"
+                                    snackRes = if (!s.enabled) R.string.pihole_active_msg else R.string.pihole_inactive_msg
                                 } else {
-                                    snackMsg = "Erreur lors du changement d'etat."
+                                    snackRes = R.string.error_state_change
                                 }
                                 toggling = false
                             }
@@ -411,17 +424,17 @@ fun PiHoleScreen(
 
                     PiHoleBlockingCard(s)
 
-                    Text("Statistiques aujourd'hui",
+                    Text(stringResource(R.string.stats_today),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PiHoleStatCard("Requetes DNS",        formatNumber(s.dnsQueriesToday), Icons.Default.Dns,    PiHoleBlue,  Modifier.weight(1f))
-                        PiHoleStatCard("Publicites bloquees", formatNumber(s.adsBlockedToday), Icons.Default.Block,  PiHoleRed,   Modifier.weight(1f))
+                        PiHoleStatCard(stringResource(R.string.dns_queries),        formatNumber(s.dnsQueriesToday), Icons.Default.Dns,    PiHoleBlue,  Modifier.weight(1f))
+                        PiHoleStatCard(stringResource(R.string.ads_blocked), formatNumber(s.adsBlockedToday), Icons.Default.Block,  PiHoleRed,   Modifier.weight(1f))
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PiHoleStatCard("Domaines en cache", formatNumber(s.queriesCached),  Icons.Default.Memory,  PiHoleAmber, Modifier.weight(1f))
-                        PiHoleStatCard("Clients vus",       s.clientsEverSeen.toString(),   Icons.Default.Devices, PiHoleGreen, Modifier.weight(1f))
+                        PiHoleStatCard(stringResource(R.string.cached_domains), formatNumber(s.queriesCached),  Icons.Default.Memory,  PiHoleAmber, Modifier.weight(1f))
+                        PiHoleStatCard(stringResource(R.string.clients_seen),       s.clientsEverSeen.toString(),   Icons.Default.Devices, PiHoleGreen, Modifier.weight(1f))
                     }
 
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -431,11 +444,11 @@ fun PiHoleScreen(
                             Icon(Icons.Default.Shield, contentDescription = null,
                                 tint = PiHoleRed, modifier = Modifier.size(28.dp))
                             Column {
-                                Text("Liste de blocage", style = MaterialTheme.typography.labelSmall,
+                                Text(stringResource(R.string.blocking_list), style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(formatNumber(s.domainsBlocked) + " domaines bloques",
+                                Text(stringResource(R.string.domains_blocked_count, formatNumber(s.domainsBlocked)),
                                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text("Domaines uniques vus : ${formatNumber(s.uniqueDomains)}",
+                                Text(stringResource(R.string.unique_domains_seen, formatNumber(s.uniqueDomains)),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -465,9 +478,9 @@ private fun PiHoleToggleCard(enabled: Boolean, toggling: Boolean, onToggle: () -
                 Box(modifier = Modifier.size(14.dp).clip(CircleShape).background(
                     (if (enabled) PiHoleGreen else PiHoleRed).copy(alpha = if (enabled) pulse else 1f)))
                 Column {
-                    Text(if (enabled) "Pi-hole actif" else "Pi-hole inactif",
+                    Text(if (enabled) stringResource(R.string.pihole_status_active) else stringResource(R.string.pihole_status_inactive),
                         fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text(if (enabled) "Le filtrage DNS est en cours" else "Tout le trafic passe sans filtrage",
+                    Text(if (enabled) stringResource(R.string.pihole_filtering_active) else stringResource(R.string.pihole_filtering_inactive),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -495,7 +508,7 @@ private fun PiHoleBlockingCard(s: PiHoleStats) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Taux de blocage", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.blocking_rate), style = MaterialTheme.typography.titleSmall)
                 Text("%.1f%%".format(s.adsPercentage), fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = color)
             }
             LinearProgressIndicator(
@@ -504,7 +517,7 @@ private fun PiHoleBlockingCard(s: PiHoleStats) {
                 color      = color,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
-            Text("${formatNumber(s.adsBlockedToday)} requetes bloquees sur ${formatNumber(s.dnsQueriesToday)} aujourd'hui",
+            Text(stringResource(R.string.blocking_summary, formatNumber(s.adsBlockedToday), formatNumber(s.dnsQueriesToday)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

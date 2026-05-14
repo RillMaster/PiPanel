@@ -11,11 +11,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -37,13 +39,15 @@ data class PwmDevice(
 fun PwmSliderScreen(
     settings: SettingsManager,
     onClose : () -> Unit,
+    onOpenMenu: () -> Unit,
 ) {
+    val context           = androidx.compose.ui.platform.LocalContext.current
     val scope             = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     val devices = listOf(
-        PwmDevice("LED Luminosité", 18, Icons.Default.Lightbulb, "%",   Color(0xFFFFD700)),
-        PwmDevice("Ventilateur",    12, Icons.Default.Air,       "RPM", Color(0xFF00BFFF))
+        PwmDevice(stringResource(R.string.pwm_led_label), 18, Icons.Default.Lightbulb, "%",   Color(0xFFFFD700)),
+        PwmDevice(stringResource(R.string.pwm_fan_label),    12, Icons.Default.Air,       "RPM", Color(0xFF00BFFF))
     )
 
     val dutyCycles = remember { mutableStateListOf(0f, 0f) }
@@ -53,10 +57,10 @@ fun PwmSliderScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Contrôle PWM", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.nav_pwm), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    IconButton(onClick = onOpenMenu) {
+                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -74,7 +78,7 @@ fun PwmSliderScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             Text(
-                "Contrôle de puissance via PWM (numérotation BCM)",
+                stringResource(R.string.pwm_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -96,7 +100,7 @@ fun PwmSliderScreen(
                                     buildPwmCommand(device.pin, dc),
                                     settings.sshTimeoutMs
                                 )
-                                snackbarHostState.showSnackbar("✅ ${device.name} → $dc${device.unit}")
+                                snackbarHostState.showSnackbar(context.getString(R.string.pwm_apply_success, device.name, dc, device.unit))
                             } catch (e: Exception) {
                                 snackbarHostState.showSnackbar("❌ ${e.message}")
                             } finally {
@@ -115,7 +119,7 @@ fun PwmSliderScreen(
                                 settings.sshTimeoutMs
                             )
                             dutyCycles[idx] = 0f
-                            snackbarHostState.showSnackbar("⏹ ${device.name} arrêté")
+                            snackbarHostState.showSnackbar(context.getString(R.string.pwm_stop_success, device.name))
                         } catch (e: Exception) {
                             snackbarHostState.showSnackbar("❌ ${e.message}")
                         } finally {
@@ -179,7 +183,7 @@ private fun PwmDeviceCard(
                 }
                 Column {
                     Text(device.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                    Text("Pin BCM ${device.pin}", fontSize = 12.sp,
+                    Text(stringResource(R.string.pwm_pin_bcm, device.pin), fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Spacer(Modifier.weight(1f))
@@ -220,7 +224,7 @@ private fun PwmDeviceCard(
                     colors  = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     )
-                ) { Text("Stop") }
+                ) { Text(stringResource(R.string.action_stop)) }
 
                 Button(
                     onClick = onApply,
@@ -234,7 +238,7 @@ private fun PwmDeviceCard(
                             color       = Color.White
                         )
                     } else {
-                        Text("Appliquer", color = Color.White)
+                        Text(stringResource(R.string.action_apply), color = Color.White)
                     }
                 }
             }

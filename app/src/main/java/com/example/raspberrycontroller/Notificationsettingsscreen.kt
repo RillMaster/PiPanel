@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -19,7 +20,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun NotificationSettingsScreen(
     settings: SettingsManager,
-    onBack  : () -> Unit = {}
+    onBack  : () -> Unit = {},
+    onOpenMenu: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -37,8 +39,8 @@ fun NotificationSettingsScreen(
             TopAppBar(
                 title = { Text("🔔 Notifications") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    IconButton(onClick = onOpenMenu) {
+                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
                     }
                 }
             )

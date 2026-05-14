@@ -1,27 +1,19 @@
-🚀 WireGuard Management Update
-This update provides a complete management interface for your WireGuard tunnels on Raspberry Pi.
+✨ New Features
 
-✨ New Features:
-• Full Peer Management: You can now add, rename, and delete WireGuard clients directly from the application.
+- WireGuard: Added QR code client
+- UFW Firewall: New firewall management page
+- Logs Viewer: New page for viewing real-time system logs
+- File Manager: New file management page
+- Network Speed: New tab in Advanced Monitoring
 
-• Name Identification: Custom client names are now persistent. They are stored and read via comments (# Name) directly in the /etc/wireguard/wg0.conf file.
+🔧 Improvements
 
-Smart Configuration: When creating a client, the application automatically generates the private key, public key, and assigns the next available IP address.
+- Complete redesign of the interface and navigation menu
+- Color indicator in the menu to identify the active page
+- Reduced disk space in Advanced Monitoring for improved readability
+- Removal of GPU temperature from Advanced Monitoring
+- Added animations throughout the app
 
-• Custom Port Support: Improved endpoint management to support specific ports (useful for NAT/port forwarding).
+🐛 Fixes
 
-🛠 Technical Improvements:
-
-Optimized Python Scripts: Use remote Python scripts to manipulate configuration files without risk of corruption.
-
-• SSH Robustness: Fixed variable interpolation errors in remote commands.
-
-• Hot Restart: After each modification (addition/deletion), the WireGuard service is cleanly restarted to apply the changes without losing the configuration.
-
-🎨 Interface & UX:
-
-• Loading Overlay: Added a progress screen when restarting WireGuard to prevent simultaneous actions.
-
-• Visual Feedback: Notifications (Snackbar) to confirm successful operations (renaming, deletion, etc.).
-
-• Real-Time Statistics: Improved monitoring of traffic (upload/download) and client connection status.
+- Fixed several bugs

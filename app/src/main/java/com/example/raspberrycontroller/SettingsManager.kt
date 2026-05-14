@@ -137,4 +137,17 @@ class SettingsManager(context: Context) {
     var dockerAlertsEnabled: Boolean
         get()      = prefs.getBoolean("docker_alerts_enabled", true)
         set(value) = prefs.edit { putBoolean("docker_alerts_enabled", value) }
+
+    // ── Détection des services ────────────────────────────────────────────────
+    fun isServiceInstalled(screen: Screen): Boolean {
+        return prefs.getBoolean("svc_installed_${screen.name}", true)
+    }
+
+    fun setServiceInstalled(screen: Screen, installed: Boolean) {
+        prefs.edit { putBoolean("svc_installed_${screen.name}", installed) }
+    }
+
+    var lastServiceScan: Long
+        get()      = prefs.getLong("last_service_scan", 0L)
+        set(value) = prefs.edit { putLong("last_service_scan", value) }
 }

@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -34,14 +35,14 @@ data class GpioSchedule(
     val enabled : Boolean = true
 )
 
-enum class PinAction(val label: String, val gpioValue: Int) {
-    ON("Allumer", 1),
-    OFF("Éteindre", 0)
+enum class PinAction(val labelRes: Int, val gpioValue: Int) {
+    ON(R.string.action_turn_on, 1),
+    OFF(R.string.action_turn_off, 0)
 }
 
-enum class WeekDay(val short: String, val cronVal: String) {
-    MON("Lu", "1"), TUE("Ma", "2"), WED("Me", "3"),
-    THU("Je", "4"), FRI("Ve", "5"), SAT("Sa", "6"), SUN("Di", "0")
+enum class WeekDay(val shortRes: Int, val cronVal: String) {
+    MON(R.string.day_mon, "1"), TUE(R.string.day_tue, "2"), WED(R.string.day_wed, "3"),
+    THU(R.string.day_thu, "4"), FRI(R.string.day_fri, "5"), SAT(R.string.day_sat, "6"), SUN(R.string.day_sun, "0")
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -50,8 +51,10 @@ enum class WeekDay(val short: String, val cronVal: String) {
 @Composable
 fun GpioScheduleScreen(
     settings: SettingsManager,
-    onClose : () -> Unit
+    onClose : () -> Unit,
+    onOpenMenu: () -> Unit
 ) {
+    val context           = androidx.compose.ui.platform.LocalContext.current
     val scope             = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -62,10 +65,10 @@ fun GpioScheduleScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Planificateur GPIO", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.nav_gpio_planner), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    IconButton(onClick = onOpenMenu) {
+                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
                     }
                 },
                 actions = {
@@ -77,13 +80,13 @@ fun GpioScheduleScreen(
                                     settings.username, settings.password,
                                     "crontab -l", settings.sshTimeoutMs
                                 )
-                                snackbarHostState.showSnackbar("✅ Cron synchronisé")
+                                snackbarHostState.showSnackbar(context.getString(R.string.sync_success))
                             } catch (e: Exception) {
                                 snackbarHostState.showSnackbar("❌ ${e.message}")
                             }
                         }
                     }) {
-                        Icon(Icons.Default.Sync, contentDescription = "Synchroniser")
+                        Icon(Icons.Default.Sync, contentDescription = stringResource(R.string.action_sync))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -95,7 +98,7 @@ fun GpioScheduleScreen(
             ExtendedFloatingActionButton(
                 onClick          = { showAddDialog.value = true },
                 icon             = { Icon(Icons.Default.Add, contentDescription = null) },
-                text             = { Text("Nouvelle règle") },
+                text             = { Text(stringResource(R.string.schedule_new_rule)) },
                 containerColor   = MaterialTheme.colorScheme.primary
             )
         }
@@ -116,11 +119,11 @@ fun GpioScheduleScreen(
                         tint               = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     )
                     Text(
-                        "Aucune règle planifiée",
+                        stringResource(R.string.schedule_none),
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                     Text(
-                        "Appuyez sur + pour en créer une",
+                        stringResource(R.string.schedule_help_tap_plus),
                         fontSize = 12.sp,
                         color    = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     )
@@ -143,7 +146,7 @@ fun GpioScheduleScreen(
                                 }
                                 applyCrontab(settings, schedules.filter { it.enabled })
                                 snackbarHostState.showSnackbar(
-                                    if (enabled) "✅ Règle activée" else "⏸ Règle désactivée"
+                                    if (enabled) context.getString(R.string.rule_enabled) else context.getString(R.string.rule_disabled)
                                 )
                             }
                         },
@@ -151,7 +154,7 @@ fun GpioScheduleScreen(
                             scope.launch {
                                 schedules = schedules.filter { it.id != schedule.id }
                                 applyCrontab(settings, schedules.filter { it.enabled })
-                                snackbarHostState.showSnackbar("🗑 Règle supprimée")
+                                snackbarHostState.showSnackbar(context.getString(R.string.rule_deleted))
                             }
                         }
                     )
@@ -170,9 +173,9 @@ fun GpioScheduleScreen(
                     schedules = schedules + newSchedule
                     try {
                         applyCrontab(settings, schedules.filter { it.enabled })
-                        snackbarHostState.showSnackbar("✅ Règle ajoutée et activée")
+                        snackbarHostState.showSnackbar(context.getString(R.string.rule_added))
                     } catch (e: Exception) {
-                        snackbarHostState.showSnackbar("❌ Erreur crontab : ${e.message}")
+                        snackbarHostState.showSnackbar(context.getString(R.string.error_crontab_prefix, e.message ?: ""))
                     }
                 }
             }
@@ -222,7 +225,12 @@ private fun ScheduleCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(schedule.label, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Pin ${schedule.pin} — ${schedule.action.label} à ${"${schedule.hour}".padStart(2,'0')}:${"${schedule.minute}".padStart(2,'0')}",
+                    stringResource(
+                        R.string.schedule_summary,
+                        schedule.pin,
+                        stringResource(schedule.action.labelRes),
+                        "${"${schedule.hour}".padStart(2,'0')}:${"${schedule.minute}".padStart(2,'0')}"
+                    ),
                     fontSize = 13.sp,
                     color    = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -230,7 +238,7 @@ private fun ScheduleCard(
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         schedule.days.forEach { day ->
                             Text(
-                                day.short,
+                                stringResource(day.shortRes),
                                 fontSize = 10.sp,
                                 color    = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier
@@ -241,7 +249,7 @@ private fun ScheduleCard(
                         }
                     }
                 } else {
-                    Text("Tous les jours", fontSize = 10.sp,
+                    Text(stringResource(R.string.schedule_every_day), fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -249,7 +257,7 @@ private fun ScheduleCard(
             Switch(checked = schedule.enabled, onCheckedChange = onToggle)
 
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Supprimer",
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.action_delete),
                     tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
             }
         }
@@ -272,20 +280,20 @@ private fun AddScheduleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nouvelle règle") },
+        title = { Text(stringResource(R.string.schedule_new_rule)) },
         text  = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value         = label,
                     onValueChange = { label = it },
-                    label         = { Text("Nom de la règle") },
+                    label         = { Text(stringResource(R.string.schedule_rule_name)) },
                     singleLine    = true,
                     modifier      = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value         = pin,
                     onValueChange = { if (it.all { c -> c.isDigit() }) pin = it },
-                    label         = { Text("Pin GPIO (BCM)") },
+                    label         = { Text(stringResource(R.string.schedule_pin_bcm_label)) },
                     singleLine    = true,
                     modifier      = Modifier.fillMaxWidth()
                 )
@@ -294,11 +302,11 @@ private fun AddScheduleDialog(
                         FilterChip(
                             selected = action == pa,
                             onClick  = { action = pa },
-                            label    = { Text(pa.label) }
+                            label    = { Text(stringResource(pa.labelRes)) }
                         )
                     }
                 }
-                Text("Heure : ${hour.toString().padStart(2,'0')}:${minute.toString().padStart(2,'0')}",
+                Text(stringResource(R.string.schedule_time_label, "${hour.toString().padStart(2,'0')}:${minute.toString().padStart(2,'0')}"),
                     fontWeight = FontWeight.Medium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -314,8 +322,10 @@ private fun AddScheduleDialog(
                             valueRange = 0f..59f, steps = 11)
                     }
                 }
-                Text("Jours (vide = tous les jours)", fontSize = 12.sp,
+                Text(stringResource(R.string.schedule_days_help), fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Actually I should just add the string for "Days (empty = every day)"
+                // I'll add it to strings.xml in a moment.
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     WeekDay.entries.forEach { day ->
                         val selected = day in selectedDays
@@ -324,7 +334,7 @@ private fun AddScheduleDialog(
                             onClick  = {
                                 selectedDays = if (selected) selectedDays - day else selectedDays + day
                             },
-                            label = { Text(day.short, fontSize = 11.sp) }
+                            label = { Text(stringResource(day.shortRes), fontSize = 11.sp) }
                         )
                     }
                 }
@@ -344,10 +354,10 @@ private fun AddScheduleDialog(
                         ))
                     }
                 }
-            ) { Text("Ajouter") }
+            ) { Text(stringResource(R.string.action_add)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Annuler") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }
