@@ -5,6 +5,7 @@
 - Logs Viewer: New page for viewing real-time system logs
 - File Manager: New file management page
 - Network Speed: New tab in Advanced Monitoring
+- Localization: The app automatically adapts to the system language
 
 🔧 Improvements
 
