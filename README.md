@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" width="120" alt="RaspController Logo"/>
+</p>
+
 # 🍓 RaspController
 
 An Android app to manage your Raspberry Pi remotely via SSH.
