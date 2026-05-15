@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -162,7 +163,8 @@ fun OnboardingScreen(
                                     port     = settings.port,
                                     user     = settings.username,
                                     password = settings.password,
-                                    command  = "echo __ok__"
+                                    command  = "echo __ok__",
+                                    context  = context
                                 )
                                 testState = if (result.contains("__ok__")) TestState.Success
                                 else TestState.Error(result)
@@ -238,30 +240,30 @@ private fun WelcomeStep(onNext: () -> Unit) {
         ) {
             Image(
                 painter = painterResource(id = R.drawable.logo),
-                contentDescription = "Logo",
+                contentDescription = stringResource(R.string.logo_content_description),
                 modifier = Modifier.size(70.dp),
                 contentScale = ContentScale.Fit
             )
         }
 
         Text(
-            text      = "Bienvenue sur\nRaspberry Controller",
+            text      = stringResource(R.string.onboarding_welcome_title),
             style     = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center
         )
 
         Text(
-            text      = "Contrôlez votre Raspberry Pi depuis votre téléphone — GPIO, SSH, capteurs et plus encore.",
+            text      = stringResource(R.string.onboarding_welcome_desc),
             style     = MaterialTheme.typography.bodyMedium,
             color     = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
 
         val features = listOf(
-            "💡" to "Contrôle GPIO (LED, relais…)",
-            "🖥️" to "Terminal SSH interactif",
-            "🌡️" to "Lecture des capteurs",
-            "⚡" to "Raccourcis de commandes"
+            "💡" to stringResource(R.string.onboarding_feature_gpio),
+            "🖥️" to stringResource(R.string.onboarding_feature_terminal),
+            "🌡️" to stringResource(R.string.onboarding_feature_sensors),
+            "⚡" to stringResource(R.string.onboarding_feature_shortcuts)
         )
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -288,7 +290,7 @@ private fun WelcomeStep(onNext: () -> Unit) {
         Spacer(Modifier.height(8.dp))
 
         Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-            Text("Commencer la configuration")
+            Text(stringResource(R.string.onboarding_action_start))
         }
     }
 }
@@ -304,10 +306,10 @@ private fun NetworkStep(
     onNext      : () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        StepHeader(step = "Étape 1 / 4", title = "Type de connexion")
+        StepHeader(step = stringResource(R.string.onboarding_step_1_4), title = stringResource(R.string.onboarding_network_title))
 
         Text(
-            text  = "Comment souhaitez-vous accéder à votre Raspberry Pi ?",
+            text  = stringResource(R.string.onboarding_network_question),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -315,16 +317,16 @@ private fun NetworkStep(
         NetworkOptionCard(
             selected    = !useWireGuard,
             emoji       = "📶",
-            title       = "Réseau local (Wi-Fi)",
-            description = "Pi et téléphone sur le même réseau. Recommandé pour débuter.",
+            title       = stringResource(R.string.onboarding_network_local_title),
+            description = stringResource(R.string.onboarding_network_local_desc),
             onClick     = { onToggleWg(false) }
         )
 
         NetworkOptionCard(
             selected    = useWireGuard,
             emoji       = "🔒",
-            title       = "VPN WireGuard",
-            description = "Accès à distance sécurisé depuis n'importe où.",
+            title       = stringResource(R.string.onboarding_network_wg_title),
+            description = stringResource(R.string.onboarding_network_wg_desc),
             onClick     = { onToggleWg(true) }
         )
 
@@ -335,7 +337,7 @@ private fun NetworkStep(
                 )
             ) {
                 Text(
-                    text     = "ℹ️ Une étape supplémentaire vous guidera pour configurer WireGuard.",
+                    text     = stringResource(R.string.onboarding_network_wg_info),
                     modifier = Modifier.padding(12.dp),
                     style    = MaterialTheme.typography.bodySmall,
                     color    = MaterialTheme.colorScheme.onSecondaryContainer
@@ -401,17 +403,17 @@ private fun WireGuardStep(
     onOpenWg: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        StepHeader(step = "Étape 1 / 4 — VPN", title = "Configurer WireGuard")
+        StepHeader(step = stringResource(R.string.onboarding_step_1_4_vpn), title = stringResource(R.string.onboarding_wg_config_title))
 
         Text(
-            text  = "WireGuard doit être configuré sur votre Raspberry Pi et sur ce téléphone pour permettre l'accès à distance.",
+            text  = stringResource(R.string.onboarding_wg_config_desc),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Sur le Raspberry Pi (terminal) :",
+                Text(stringResource(R.string.onboarding_wg_rpi_title),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
                 Text(
@@ -425,11 +427,11 @@ private fun WireGuardStep(
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Sur ce téléphone :",
+                Text(stringResource(R.string.onboarding_wg_phone_title),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
                 Text(
-                    text  = "1. Installer l'app WireGuard\n2. Importer la config (.conf) générée sur le Pi\n3. Activer le tunnel avant de continuer",
+                    text  = stringResource(R.string.onboarding_wg_phone_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -441,18 +443,18 @@ private fun WireGuardStep(
             modifier = Modifier.fillMaxWidth(),
             colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF88171A))
         ) {
-            Text("🔒  Ouvrir WireGuard")
+            Text(stringResource(R.string.onboarding_wg_open_action))
         }
 
         Text(
-            text      = "Si WireGuard n'est pas installé, ce bouton ouvrira le Play Store.",
+            text      = stringResource(R.string.onboarding_wg_play_store_info),
             style     = MaterialTheme.typography.bodySmall,
             color     = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier  = Modifier.fillMaxWidth()
         )
 
-        NavigationButtons(onBack = onBack, onNext = onNext, nextLabel = "Tunnel actif, continuer")
+        NavigationButtons(onBack = onBack, onNext = onNext, nextLabel = stringResource(R.string.onboarding_wg_next_label))
     }
 }
 
@@ -469,10 +471,10 @@ private fun SshConfigStep(
     onNext: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        StepHeader(step = "Étape 2 / 4", title = "Connexion SSH")
+        StepHeader(step = stringResource(R.string.onboarding_step_2_4), title = stringResource(R.string.onboarding_ssh_title))
 
         Text(
-            text  = "Entrez les informations de connexion de votre Raspberry Pi.",
+            text  = stringResource(R.string.onboarding_ssh_desc),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -480,8 +482,8 @@ private fun SshConfigStep(
         OutlinedTextField(
             value         = host,
             onValueChange = onHostChange,
-            label         = { Text("Adresse IP ou hostname") },
-            placeholder   = { Text("ex : 192.168.1.42 ou raspberrypi.local") },
+            label         = { Text(stringResource(R.string.onboarding_ssh_host_label)) },
+            placeholder   = { Text(stringResource(R.string.onboarding_ssh_host_hint)) },
             modifier      = Modifier.fillMaxWidth(),
             singleLine    = true
         )
@@ -489,12 +491,12 @@ private fun SshConfigStep(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
                 value = port, onValueChange = onPortChange,
-                label = { Text("Port SSH") },
+                label = { Text(stringResource(R.string.onboarding_ssh_port_label)) },
                 modifier = Modifier.width(120.dp), singleLine = true
             )
             OutlinedTextField(
                 value = username, onValueChange = onUsernameChange,
-                label = { Text("Utilisateur") }, placeholder = { Text("pi") },
+                label = { Text(stringResource(R.string.onboarding_ssh_user_label)) }, placeholder = { Text("pi") },
                 modifier = Modifier.weight(1f), singleLine = true
             )
         }
@@ -502,7 +504,7 @@ private fun SshConfigStep(
         OutlinedTextField(
             value                = password,
             onValueChange        = onPasswordChange,
-            label                = { Text("Mot de passe") },
+            label                = { Text(stringResource(R.string.onboarding_ssh_pass_label)) },
             visualTransformation = PasswordVisualTransformation(),
             modifier             = Modifier.fillMaxWidth(),
             singleLine           = true
@@ -531,15 +533,15 @@ private fun TestStep(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        StepHeader(step = "Étape 3 / 4", title = "Test de connexion")
+        StepHeader(step = stringResource(R.string.onboarding_step_3_4), title = stringResource(R.string.onboarding_test_title))
         Spacer(Modifier.height(8.dp))
 
         when (state) {
             is TestState.Idle, TestState.Loading -> {
                 CircularProgressIndicator(modifier = Modifier.size(56.dp))
-                Text("Connexion en cours…", style = MaterialTheme.typography.bodyLarge,
+                Text(stringResource(R.string.onboarding_test_loading), style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Tentative SSH sur votre Raspberry Pi",
+                Text(stringResource(R.string.onboarding_test_attempt),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -556,27 +558,27 @@ private fun TestStep(
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(36.dp))
                 }
-                Text("Connexion réussie !", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.onboarding_test_success), style = MaterialTheme.typography.titleMedium)
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CheckRow("SSH opérationnel")
-                        CheckRow("Raspberry Pi accessible")
-                        CheckRow("Identifiants enregistrés")
+                        CheckRow(stringResource(R.string.onboarding_test_ssh_ok))
+                        CheckRow(stringResource(R.string.onboarding_test_pi_accessible))
+                        CheckRow(stringResource(R.string.onboarding_test_creds_saved))
                     }
                 }
 
                 Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                    Text("Terminer la configuration")
+                    Text(stringResource(R.string.onboarding_test_finish))
                 }
             }
 
             is TestState.Error -> {
                 Text("❌", fontSize = 48.sp)
-                Text("Connexion échouée", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.onboarding_test_failed), style = MaterialTheme.typography.titleMedium)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
@@ -587,8 +589,8 @@ private fun TestStep(
                         color = MaterialTheme.colorScheme.onErrorContainer)
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f)) { Text("Modifier") }
-                    Button(onClick = onStartTest, modifier = Modifier.weight(1f)) { Text("Réessayer") }
+                    OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.onboarding_modify)) }
+                    Button(onClick = onStartTest, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.action_retry)) }
                 }
             }
         }
@@ -614,16 +616,16 @@ private fun DoneStep(onFinish: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("🎉", fontSize = 64.sp, textAlign = TextAlign.Center)
-        Text("Tout est prêt !", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.onboarding_done_title), style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
         Text(
-            text      = "Votre Raspberry Pi est configuré et accessible. Vous pouvez maintenant contrôler les GPIO, exécuter des commandes SSH et lire les capteurs.",
+            text      = stringResource(R.string.onboarding_done_desc),
             style     = MaterialTheme.typography.bodyMedium,
             color     = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(8.dp))
         Button(onClick = onFinish, modifier = Modifier.fillMaxWidth()) {
-            Text("Accéder au contrôle")
+            Text(stringResource(R.string.onboarding_action_finish))
         }
     }
 }
@@ -644,11 +646,11 @@ private fun StepHeader(step: String, title: String) {
 private fun NavigationButtons(
     onBack      : () -> Unit,
     onNext      : () -> Unit,
-    nextLabel   : String  = "Continuer",
+    nextLabel   : String  = stringResource(R.string.onboarding_next),
     nextEnabled : Boolean = true
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onBack, modifier = Modifier.wrapContentWidth()) { Text("Retour") }
+        OutlinedButton(onClick = onBack, modifier = Modifier.wrapContentWidth()) { Text(stringResource(R.string.onboarding_back)) }
         Button(onClick = onNext, modifier = Modifier.weight(1f), enabled = nextEnabled) { Text(nextLabel) }
     }
 }

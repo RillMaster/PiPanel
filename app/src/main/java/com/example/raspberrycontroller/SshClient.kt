@@ -1,5 +1,6 @@
 package com.example.raspberrycontroller
 
+import android.content.Context
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelShell
 import com.jcraft.jsch.JSchException
@@ -55,43 +56,43 @@ object SshClient {
     /**
      * Traduit une exception JSch en message lisible par l'utilisateur.
      */
-    fun parseError(e: Throwable): String {
-        val msg = e.message ?: "Erreur inconnue"
+    fun parseError(context: Context, e: Throwable): String {
+        val msg = e.message ?: "???"
         return when {
             (e is JSchException) && (msg.contains("Auth fail", ignoreCase = true)
                     || msg.contains("auth cancel", ignoreCase = true)) ->
-                "❌ Authentification échouée — vérifiez identifiant / mot de passe"
+                context.getString(R.string.ssh_error_auth)
 
             (e is JSchException) && (msg.contains("UnknownHost", ignoreCase = true)
                     || msg.contains("unable to resolve", ignoreCase = true)
                     || msg.contains("nodename nor servname", ignoreCase = true)) ->
-                "🌐 Hôte introuvable — vérifiez l'adresse IP ($msg)"
+                context.getString(R.string.ssh_error_host, msg)
 
             (e is JSchException) && (msg.contains("timeout", ignoreCase = true)
                     || msg.contains("timed out", ignoreCase = true)) ->
-                "⏱️ Délai dépassé — hôte éteint ou port fermé ?"
+                context.getString(R.string.ssh_error_timeout)
 
             (e is JSchException) && msg.contains("Connection refused", ignoreCase = true) ->
-                "🚫 Connexion refusée — SSH est-il activé sur le Raspberry Pi ?"
+                context.getString(R.string.ssh_error_refused)
 
             (e is JSchException) && msg.contains("No route to host", ignoreCase = true) ->
-                "📡 Hôte inaccessible — êtes-vous sur le même réseau Wi-Fi ?"
+                context.getString(R.string.ssh_error_unreachable)
 
             (e is JSchException) && (msg.contains("Connection reset", ignoreCase = true)
                     || msg.contains("Broken pipe", ignoreCase = true)) ->
-                "🔌 Connexion interrompue — le Raspberry Pi a fermé la session"
+                context.getString(R.string.ssh_error_broken)
 
             (e is JSchException) && msg.contains("channel is not opened", ignoreCase = true) ->
-                "⚠️ Canal fermé — la session a expiré, reconnectez-vous"
+                context.getString(R.string.ssh_error_channel)
 
             msg.contains("ECONNREFUSED", ignoreCase = true) ->
-                "🚫 Port SSH refusé (ECONNREFUSED)"
+                context.getString(R.string.ssh_error_refused)
             msg.contains("ETIMEDOUT", ignoreCase = true) ->
-                "⏱️ Réseau lent ou hôte éteint (ETIMEDOUT)"
+                context.getString(R.string.ssh_error_timeout)
             msg.contains("ENETUNREACH", ignoreCase = true) ->
-                "📡 Réseau inaccessible (ENETUNREACH)"
+                context.getString(R.string.ssh_error_unreachable)
 
-            else -> "⚠️ Erreur SSH : $msg"
+            else -> context.getString(R.string.ssh_error_generic, msg)
         }
     }
 
@@ -103,6 +104,7 @@ object SshClient {
         password: String,
         command: String,
         timeoutMs: Int = 8000,
+        context: Context? = null
     ): String = withContext(Dispatchers.IO) {
         android.util.Log.e("SSH", "SSH: Tentative connexion $host:$port ($user)...")
         try {
@@ -145,7 +147,7 @@ object SshClient {
             result
 
         } catch (e: Exception) {
-            val errorMsg = parseError(e)
+            val errorMsg = if (context != null) parseError(context, e) else e.message ?: "SSH Error"
             android.util.Log.e("SSH", "SSH: ERREUR - $errorMsg")
             errorMsg
         }

@@ -322,4 +322,116 @@
     <string name="logo_content_description">App Logo</string>
     <string name="open_menu">Open menu</string>
     <string name="version_label">Version %1$s</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_welcome_title">Welcome to\nRaspberry Controller</string>
+    <string name="onboarding_welcome_desc">Control your Raspberry Pi from your phone — GPIO, SSH, sensors, and more.</string>
+    <string name="onboarding_feature_gpio">GPIO Control (LED, relays…)</string>
+    <string name="onboarding_feature_terminal">Interactive SSH Terminal</string>
+    <string name="onboarding_feature_sensors">Sensor Readings</string>
+    <string name="onboarding_feature_shortcuts">Command Shortcuts</string>
+    <string name="onboarding_action_start">Start Configuration</string>
+    <string name="onboarding_step_1_4">Step 1 / 4</string>
+    <string name="onboarding_network_title">Connection Type</string>
+    <string name="onboarding_network_question">How do you want to access your Raspberry Pi?</string>
+    <string name="onboarding_network_local_title">Local Network (Wi-Fi)</string>
+    <string name="onboarding_network_local_desc">Pi and phone on the same network. Recommended for beginners.</string>
+    <string name="onboarding_network_wg_title">WireGuard VPN</string>
+    <string name="onboarding_network_wg_desc">Secure remote access from anywhere.</string>
+    <string name="onboarding_network_wg_info">ℹ️ An additional step will guide you to configure WireGuard.</string>
+    <string name="onboarding_step_1_4_vpn">Step 1 / 4 — VPN</string>
+    <string name="onboarding_wg_config_title">Configure WireGuard</string>
+    <string name="onboarding_wg_config_desc">WireGuard must be configured on your Raspberry Pi and on this phone to allow remote access.</string>
+    <string name="onboarding_wg_rpi_title">On Raspberry Pi (terminal):</string>
+    <string name="onboarding_wg_phone_title">On this phone:</string>
+    <string name="onboarding_wg_phone_desc">1. Install WireGuard app\n2. Import generated config (.conf)\n3. Enable tunnel before continuing</string>
+    <string name="onboarding_wg_open_action">🔒 Open WireGuard</string>
+    <string name="onboarding_wg_play_store_info">If WireGuard is not installed, this button will open the Play Store.</string>
+    <string name="onboarding_wg_next_label">Tunnel active, continue</string>
+    <string name="onboarding_step_2_4">Step 2 / 4</string>
+    <string name="onboarding_ssh_title">SSH Connection</string>
+    <string name="onboarding_ssh_desc">Enter your Raspberry Pi connection details.</string>
+    <string name="onboarding_ssh_host_label">IP Address or hostname</string>
+    <string name="onboarding_ssh_host_hint">ex: 192.168.1.42 or raspberrypi.local</string>
+    <string name="onboarding_ssh_port_label">SSH Port</string>
+    <string name="onboarding_ssh_user_label">Username</string>
+    <string name="onboarding_ssh_pass_label">Password</string>
+    <string name="onboarding_step_3_4">Step 3 / 4</string>
+    <string name="onboarding_test_title">Connection Test</string>
+    <string name="onboarding_test_loading">Connecting…</string>
+    <string name="onboarding_test_attempt">Attempting SSH to your Raspberry Pi</string>
+    <string name="onboarding_test_success">Connection successful!</string>
+    <string name="onboarding_test_ssh_ok">SSH operational</string>
+    <string name="onboarding_test_pi_accessible">Raspberry Pi accessible</string>
+    <string name="onboarding_test_creds_saved">Credentials saved</string>
+    <string name="onboarding_test_finish">Finish Configuration</string>
+    <string name="onboarding_test_failed">Connection failed</string>
+    <string name="onboarding_action_finish">Access Control</string>
+    <string name="onboarding_done_title">Everything is ready!</string>
+    <string name="onboarding_done_desc">Your Raspberry Pi is configured and accessible. You can now control GPIOs, run SSH commands, and read sensors.</string>
+    <string name="onboarding_next">Continue</string>
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_modify">Modify</string>
+
+    <!-- SSH Errors -->
+    <string name="ssh_error_auth">❌ Authentication failed — check username / password</string>
+    <string name="ssh_error_host">🌐 Host not found — check IP address (%1$s)</string>
+    <string name="ssh_error_timeout">⏱️ Timeout — host down or port closed?</string>
+    <string name="ssh_error_refused">🚫 Connection refused — is SSH enabled on the Raspberry Pi?</string>
+    <string name="ssh_error_unreachable">📡 Host unreachable — are you on the same Wi-Fi network?</string>
+    <string name="ssh_error_broken">🔌 Connection interrupted — the Raspberry Pi closed the session</string>
+    <string name="ssh_error_channel">⚠️ Channel closed — session expired, please reconnect</string>
+    <string name="ssh_error_generic">⚠️ SSH Error: %1$s</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_system_name">System Alerts</string>
+    <string name="notif_channel_system_desc">CPU / RAM alerts exceeding defined threshold</string>
+    <string name="notif_channel_watchdog_name">Pi Watchdog</string>
+    <string name="notif_channel_watchdog_desc">Alert if Raspberry Pi becomes unreachable</string>
+    <string name="notif_channel_docker_name">Docker Services</string>
+    <string name="notif_channel_docker_desc">Alert if a Docker container stops</string>
+
+    <string name="notif_pi_unreachable_title">🔴 Raspberry Pi unreachable</string>
+    <string name="notif_pi_unreachable_msg">Unable to contact the Raspberry Pi. Check the network connection or power.</string>
+    <string name="notif_cpu_high_title">⚠️ High CPU – %1$d%%</string>
+    <string name="notif_cpu_high_msg">CPU exceeds the threshold of %1$d%% (current: %2$d%%)</string>
+    <string name="notif_ram_high_title">⚠️ High RAM – %1$d%%</string>
+    <string name="notif_ram_high_msg">RAM exceeds the threshold of %1$d%% (current: %2$d%% — %3$d/%4$d MB)</string>
+    <string name="notif_docker_stopped_title">🐳 Docker container stopped</string>
+    <string name="notif_docker_stopped_msg">The container \"%1$s\" has stopped unexpectedly.</string>
+
+    <!-- Widget Service -->
+    <string name="widget_service_title">Widget Monitoring</string>
+    <string name="widget_service_desc">Real-time statistics update...</string>
+
+    <!-- Pi-hole Configuration -->
+    <string name="pihole_config_title">Pi-hole Configuration</string>
+    <string name="pihole_config_save_success">Pi-hole configuration saved</string>
+    <string name="pihole_config_ssh_required_title">SSH configuration required</string>
+    <string name="pihole_config_ssh_required_desc">Pi-hole communicates via SSH. Configure the SSH connection in the main settings first.</string>
+    <string name="pihole_config_ssh_not_configured">Not configured</string>
+    <string name="pihole_config_ssh_hint_configured">Pi-hole will be contacted via localhost</string>
+    <string name="pihole_config_ssh_hint_not_configured">Please configure SSH first</string>
+    <string name="pihole_config_auth_section">Pi-hole Authentication</string>
+    <string name="pihole_config_password_label">Pi-hole web interface password</string>
+    <string name="pihole_config_password_placeholder">Pi-hole v6 password</string>
+    <string name="pihole_config_password_saved">Saved password: %1$s (%2$d chars.)</string>
+    <string name="pihole_config_password_none">No saved password</string>
+    <string name="pihole_config_v6_info">Pi-hole v6 uses the REST API on http://localhost/api. The password is the one configured during installation or via: pihole setpassword</string>
+    <string name="pihole_config_advanced_options">Advanced options</string>
+    <string name="pihole_config_auto_refresh">Automatic refresh</string>
+    <string name="pihole_config_auto_refresh_desc">Periodic update of statistics</string>
+    <string name="pihole_config_refresh_interval">Interval: %1$ds</string>
+    <string name="pihole_config_refresh_frequent">Frequent</string>
+    <string name="pihole_config_refresh_normal">Normal</string>
+    <string name="pihole_config_refresh_eco">Eco</string>
+    <string name="pihole_config_endpoint_label">API Endpoint</string>
+    <string name="pihole_config_raw_response">Raw response from Pi:</string>
+    <string name="pihole_config_test_ongoing">Test in progress...</string>
+    <string name="pihole_config_test_ssh_connecting">Connecting to Pi-hole via SSH...</string>
+    <string name="pihole_config_test_success">Connection successful</string>
+    <string name="pihole_config_test_failed">Connection failed</string>
+    <string name="pihole_config_test_summary">Pi-hole %1$s\n• %2$d DNS queries today\n• %3$.1f%% blocked\n• %4$d domains in list</string>
+    <string name="pihole_config_test_btn">Test</string>
+    <string name="pihole_config_save_btn">Save</string>
 </resources>

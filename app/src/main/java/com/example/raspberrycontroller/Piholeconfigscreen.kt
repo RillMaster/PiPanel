@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -44,6 +46,7 @@ fun PiHoleConfigScreen(
     onSaved  : () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     var piPassword   by remember { mutableStateOf(settings.piHolePassword) }
     var showPassword by remember { mutableStateOf(false) }
@@ -61,7 +64,7 @@ fun PiHoleConfigScreen(
         settings.piHoleAutoRefresh     = autoRefresh
         settings.piHoleRefreshDelaySec = refreshDelay
         scope.launch {
-            snackState.showSnackbar("Configuration Pi-hole sauvegardee")
+            snackState.showSnackbar(context.getString(R.string.pihole_config_save_success))
             onSaved()
         }
     }
@@ -76,12 +79,12 @@ fun PiHoleConfigScreen(
                     ) {
                         Icon(Icons.Default.Shield, contentDescription = null,
                             tint = CfgRed, modifier = Modifier.size(22.dp))
-                        Text("Configuration Pi-hole", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.pihole_config_title), fontWeight = FontWeight.Bold)
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back_action))
                     }
                 }
             )
@@ -108,8 +111,8 @@ fun PiHoleConfigScreen(
                         verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Warning, contentDescription = null, tint = CfgAmber)
                         Column {
-                            Text("Configuration SSH requise", fontWeight = FontWeight.Bold, color = CfgAmber)
-                            Text("Pi-hole communique via SSH. Configurez d'abord la connexion SSH dans les parametres principaux.",
+                            Text(stringResource(R.string.pihole_config_ssh_required_title), fontWeight = FontWeight.Bold, color = CfgAmber)
+                            Text(stringResource(R.string.pihole_config_ssh_required_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -117,7 +120,7 @@ fun PiHoleConfigScreen(
                 }
             }
 
-            CfgSectionLabel(icon = Icons.Default.Terminal, title = "Connexion SSH")
+            CfgSectionLabel(icon = Icons.Default.Terminal, title = stringResource(R.string.settings_ssh_title))
 
             Card(colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
@@ -129,10 +132,10 @@ fun PiHoleConfigScreen(
                         tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (sshOk) "${settings.username}@${settings.host}:${settings.port}" else "Non configure",
+                            text = if (sshOk) "${settings.username}@${settings.host}:${settings.port}" else stringResource(R.string.pihole_config_ssh_not_configured),
                             fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
                         Text(
-                            text = if (sshOk) "Pi-hole sera contacte via localhost" else "Veuillez d'abord configurer le SSH",
+                            text = if (sshOk) stringResource(R.string.pihole_config_ssh_hint_configured) else stringResource(R.string.pihole_config_ssh_hint_not_configured),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -143,13 +146,13 @@ fun PiHoleConfigScreen(
                 }
             }
 
-            CfgSectionLabel(icon = Icons.Default.Key, title = "Authentification Pi-hole")
+            CfgSectionLabel(icon = Icons.Default.Key, title = stringResource(R.string.pihole_config_auth_section))
 
             OutlinedTextField(
                 value         = piPassword,
                 onValueChange = { piPassword = it; testState = PiHoleTestState.Idle; debugInfo = null },
-                label         = { Text("Mot de passe de l'interface web Pi-hole") },
-                placeholder   = { Text("Mot de passe Pi-hole v6") },
+                label         = { Text(stringResource(R.string.pihole_config_password_label)) },
+                placeholder   = { Text(stringResource(R.string.pihole_config_password_placeholder)) },
                 leadingIcon   = { Icon(Icons.Default.Lock, contentDescription = null) },
                 trailingIcon  = {
                     IconButton(onClick = { showPassword = !showPassword }) {
@@ -166,13 +169,13 @@ fun PiHoleConfigScreen(
 
             if (settings.piHolePassword.isNotBlank()) {
                 Text(
-                    "Mot de passe sauvegarde : ${"*".repeat(settings.piHolePassword.length)} (${settings.piHolePassword.length} car.)",
+                    stringResource(R.string.pihole_config_password_saved, "*".repeat(settings.piHolePassword.length), settings.piHolePassword.length),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 Text(
-                    "Aucun mot de passe sauvegarde",
+                    stringResource(R.string.pihole_config_password_none),
                     style = MaterialTheme.typography.labelSmall,
                     color = CfgAmber
                 )
@@ -181,12 +184,10 @@ fun PiHoleConfigScreen(
             CfgInfoCard(
                 icon  = Icons.Default.Info,
                 color = CfgBlue,
-                text  = "Pi-hole v6 utilise l'API REST sur http://localhost/api. " +
-                        "Le mot de passe est celui configure lors de l'installation " +
-                        "ou via : pihole setpassword"
+                text  = stringResource(R.string.pihole_config_v6_info)
             )
 
-            CfgSectionLabel(icon = Icons.Default.Tune, title = "Options avancees")
+            CfgSectionLabel(icon = Icons.Default.Tune, title = stringResource(R.string.pihole_config_advanced_options))
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -194,9 +195,9 @@ fun PiHoleConfigScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Actualisation automatique",
+                            Text(stringResource(R.string.pihole_config_auto_refresh),
                                 style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                            Text("Mise a jour periodique des statistiques",
+                            Text(stringResource(R.string.pihole_config_auto_refresh_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -207,14 +208,14 @@ fun PiHoleConfigScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Intervalle : ${refreshDelay}s",
+                                Text(stringResource(R.string.pihole_config_refresh_interval, refreshDelay),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
                                     when {
-                                        refreshDelay <= 15 -> "Frequent"
-                                        refreshDelay <= 45 -> "Normal"
-                                        else               -> "Economique"
+                                        refreshDelay <= 15 -> stringResource(R.string.pihole_config_refresh_frequent)
+                                        refreshDelay <= 45 -> stringResource(R.string.pihole_config_refresh_normal)
+                                        else               -> stringResource(R.string.pihole_config_refresh_eco)
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
@@ -249,7 +250,7 @@ fun PiHoleConfigScreen(
                         Icon(Icons.Default.Link, contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         Column {
-                            Text("Endpoint API", style = MaterialTheme.typography.labelSmall,
+                            Text(stringResource(R.string.pihole_config_endpoint_label), style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("http://localhost/api  (via SSH)",
                                 fontFamily = FontFamily.Monospace, fontSize = 13.sp)
@@ -262,7 +263,7 @@ fun PiHoleConfigScreen(
                 Card(colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Reponse brute du Pi :",
+                        Text(stringResource(R.string.pihole_config_raw_response),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(info, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
@@ -291,7 +292,8 @@ fun PiHoleConfigScreen(
                                     settings.host, settings.port,
                                     settings.username, settings.password,
                                     buildFetchScript(piPassword),
-                                    settings.sshTimeoutMs
+                                    settings.sshTimeoutMs,
+                                    context = context
                                 ).trim()
                             } catch (e: Exception) {
                                 "Exception SSH : ${e.message}"
@@ -299,15 +301,15 @@ fun PiHoleConfigScreen(
                             debugInfo = raw
                             testState = when {
                                 raw.startsWith("auth_error") || raw.startsWith("no_sid") ->
-                                    PiHoleTestState.Failure("Mot de passe incorrect.\nReponse : $raw")
+                                    PiHoleTestState.Failure(context.getString(R.string.error_pihole_password) + "\nReponse : $raw")
                                 raw.startsWith("stats_error") ->
-                                    PiHoleTestState.Failure("Erreur stats : ${raw.substringAfter("|")}")
+                                    PiHoleTestState.Failure(context.getString(R.string.error_stats_prefix, raw.substringAfter("|")))
                                 raw.startsWith("Exception") ->
                                     PiHoleTestState.Failure(raw)
                                 else -> {
                                     val parsed = parseStatsRaw(raw)
                                     if (parsed != null) PiHoleTestState.Success(parsed)
-                                    else PiHoleTestState.Failure("Reponse inattendue :\n$raw")
+                                    else PiHoleTestState.Failure(context.getString(R.string.error_unexpected_response, raw))
                                 }
                             }
                         }
@@ -318,11 +320,11 @@ fun PiHoleConfigScreen(
                     if (testState is PiHoleTestState.Testing) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
-                        Text("Test...")
+                        Text(stringResource(R.string.pihole_config_test_ongoing))
                     } else {
                         Icon(Icons.Default.NetworkCheck, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Tester")
+                        Text(stringResource(R.string.pihole_config_test_btn))
                     }
                 }
 
@@ -333,7 +335,7 @@ fun PiHoleConfigScreen(
                 ) {
                     Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Sauvegarder")
+                    Text(stringResource(R.string.pihole_config_save_btn))
                 }
             }
 
@@ -394,6 +396,7 @@ private fun CfgTestResultCard(state: PiHoleTestState) {
     val tint          : Color
     val title         : String
     val body          : String
+    val context       = LocalContext.current
 
     when (state) {
         is PiHoleTestState.Testing -> {
@@ -401,28 +404,28 @@ private fun CfgTestResultCard(state: PiHoleTestState) {
             borderColor    = MaterialTheme.colorScheme.outline.copy(0.3f)
             icon           = Icons.Default.HourglassEmpty
             tint           = MaterialTheme.colorScheme.onSurfaceVariant
-            title          = "Test en cours..."
-            body           = "Connexion a Pi-hole via SSH..."
+            title          = stringResource(R.string.pihole_config_test_ongoing)
+            body           = stringResource(R.string.pihole_config_test_ssh_connecting)
         }
         is PiHoleTestState.Success -> {
             containerColor = CfgGreen.copy(alpha = 0.10f)
             borderColor    = CfgGreen.copy(alpha = 0.35f)
             icon           = Icons.Default.CheckCircle
             tint           = CfgGreen
-            title          = "Connexion reussie"
-            body           = buildString {
-                append("Pi-hole ${if (state.stats.enabled) "actif" else "inactif"}")
-                append(" * ${state.stats.dnsQueriesToday} requetes DNS aujourd'hui")
-                append(" * ${state.stats.adsPercentage}% bloquees")
-                append(" * ${state.stats.domainsBlocked} domaines dans la liste")
-            }
+            title          = stringResource(R.string.pihole_config_test_success)
+            body           = stringResource(R.string.pihole_config_test_summary,
+                if (state.stats.enabled) context.getString(R.string.status_active) else context.getString(R.string.status_inactive),
+                state.stats.dnsQueriesToday,
+                state.stats.adsPercentage,
+                state.stats.domainsBlocked
+            )
         }
         is PiHoleTestState.Failure -> {
             containerColor = CfgRed.copy(alpha = 0.10f)
             borderColor    = CfgRed.copy(alpha  = 0.35f)
             icon           = Icons.Default.Error
             tint           = CfgRed
-            title          = "Echec de la connexion"
+            title          = stringResource(R.string.pihole_config_test_failed)
             body           = state.reason
         }
         PiHoleTestState.Idle -> return

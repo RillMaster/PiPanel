@@ -831,7 +831,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: (
                 reconnectAttempt++
                 isReconnecting = true
                 status = context.getString(R.string.status_reconnecting, reconnectAttempt, MAX_RECONNECT_ATTEMPTS)
-                emulator.process("\r\n\u001B[33m⚠ Échec — ${SshClient.parseError(err)}\u001B[0m\r\n")
+                emulator.process("\r\n\u001B[33m⚠ Échec — ${SshClient.parseError(context, err)}\u001B[0m\r\n")
                 emulator.process("\u001B[33m  " + context.getString(R.string.msg_manual_reconnect) + "\u001B[0m\r\n")
                 renderTick++
                 delay(RECONNECT_DELAY_MS)
@@ -839,7 +839,7 @@ fun TerminalScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: (
             } else if (!userClosedManually) {
                 isReconnecting = false
                 status = context.getString(R.string.status_error)
-                emulator.process(SshClient.parseError(err) + "\r\n")
+                emulator.process(SshClient.parseError(context, err) + "\r\n")
                 emulator.process(context.getString(R.string.msg_check_ssh_settings) + "\r\n")
                 renderTick++
             }
