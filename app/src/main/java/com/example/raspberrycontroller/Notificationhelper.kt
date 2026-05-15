@@ -20,9 +20,9 @@ object NotificationHelper {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         listOf(
-            Triple(CHANNEL_SYSTEM,   "Alertes Système",  "Alertes CPU / RAM dépassant le seuil défini"),
-            Triple(CHANNEL_WATCHDOG, "Watchdog Pi",      "Alerte si le Raspberry Pi devient injoignable"),
-            Triple(CHANNEL_DOCKER,   "Services Docker",  "Alerte si un conteneur Docker tombe"),
+            Triple(CHANNEL_SYSTEM,   context.getString(R.string.notif_channel_system_name),  context.getString(R.string.notif_channel_system_desc)),
+            Triple(CHANNEL_WATCHDOG, context.getString(R.string.notif_channel_watchdog_name), context.getString(R.string.notif_channel_watchdog_desc)),
+            Triple(CHANNEL_DOCKER,   context.getString(R.string.notif_channel_docker_name),   context.getString(R.string.notif_channel_docker_desc)),
         ).forEach { (id, name, desc) ->
             NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH).apply {
                 description = desc

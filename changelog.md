@@ -1,19 +1,29 @@
-✨ New Features
+Summary: Localization improvements and initialization bug fixes
+This update focuses on internationalizing the application and fixing premature background alerts.
 
-- WireGuard: Added QR code client
-- UFW Firewall: New firewall management page
-- Logs Viewer: New page for viewing real-time system logs
-- File Manager: New file management page
-- Network Speed: New tab in Advanced Monitoring
+1. Full Localization (i18n)
 
-🔧 Improvements
+•Onboarding & Configuration: Moved all hardcoded strings from OnboardingActivity.kt and Piholeconfigscreen.kt to resource files. The setup process now fully supports English and French based on system settings.
 
-- Complete redesign of the interface and navigation menu
-- Color indicator in the menu to identify the active page
-- Reduced disk space in Advanced Monitoring for improved readability
-- Removal of GPU temperature from Advanced Monitoring
-- Added animations throughout the app
+•Localized SSH Errors: Refactored SshClient.kt to use string resources for connection errors (timeout, auth failure, host unreachable). This fixes the issue where error messages remained in French even when the system language was English.
 
-🐛 Fixes
+•Background Services: Localized notification channel names, descriptions, and alert messages in MonitoringWorker, NotificationHelper, and WidgetUpdateService.
 
-- Fixed several bugs
+2. Bug Fixes
+
+•Premature Monitoring Alerts: Fixed a bug where the MonitoringWorker would trigger a "Raspberry Pi unreachable" notification immediately after installation. It now 
+checks if the SSH configuration is completed before attempting any connection.
+
+•Language Consistency: Fixed various UI components where labels and buttons had mixed languages.
+
+3. Files Modified
+
+•strings.xml & app/src/main/res/values-fr/strings.xml: Added comprehensive localized strings.
+
+•SshClient.kt: Integrated Context for localized error parsing.
+
+•OnboardingActivity.kt & Piholeconfigscreen.kt: UI updated to use stringResource.
+
+•MonitoringWorker.kt: Added configuration check and localized alerts.
+
+•WidgetUpdateService.kt & TerminalScreen.kt: Updated for multi-language support.

@@ -187,8 +187,8 @@ class WidgetUpdateService : Service() {
 
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Surveillance Widget")
-            .setContentText("Mise à jour des statistiques en temps réel...")
+            .setContentTitle(getString(R.string.widget_service_title))
+            .setContentText(getString(R.string.widget_service_desc))
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .setOngoing(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
@@ -198,7 +198,7 @@ class WidgetUpdateService : Service() {
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Surveillance Widget",
+            getString(R.string.widget_service_title),
             NotificationManager.IMPORTANCE_LOW
         )
         val manager = getSystemService(NotificationManager::class.java)

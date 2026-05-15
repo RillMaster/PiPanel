@@ -27,7 +27,7 @@ class MonitoringWorker(
     private val cooldownMs = 30 * 60_000L   // 30 min entre deux alertes identiques
 
     override suspend fun doWork(): Result {
-        if (!settings.notificationsEnabled) return Result.success()
+        if (!settings.isConfigured() || !settings.notificationsEnabled) return Result.success()
 
         NotificationHelper.createChannels(ctx)
 
@@ -39,9 +39,8 @@ class MonitoringWorker(
                 sendAlertOnce(
                     key       = "pi_unreachable",
                     channelId = NotificationHelper.CHANNEL_WATCHDOG,
-                    title     = "🔴 Raspberry Pi injoignable",
-                    message   = "Impossible de contacter le Raspberry Pi. " +
-                            "Vérifiez la connexion réseau ou l'alimentation."
+                    title     = ctx.getString(R.string.notif_pi_unreachable_title),
+                    message   = ctx.getString(R.string.notif_pi_unreachable_msg)
                 )
             }
         } else {
@@ -64,9 +63,8 @@ class MonitoringWorker(
             sendAlertOnce(
                 key       = "cpu_high",
                 channelId = NotificationHelper.CHANNEL_SYSTEM,
-                title     = "⚠️ CPU élevé – ${stats.cpuPercent}%",
-                message   = "Le CPU dépasse le seuil de ${settings.cpuThreshold}% " +
-                        "(actuel : ${stats.cpuPercent}%)"
+                title     = ctx.getString(R.string.notif_cpu_high_title, stats.cpuPercent),
+                message   = ctx.getString(R.string.notif_cpu_high_msg, settings.cpuThreshold, stats.cpuPercent)
             )
         }
 
@@ -77,9 +75,8 @@ class MonitoringWorker(
             sendAlertOnce(
                 key       = "ram_high",
                 channelId = NotificationHelper.CHANNEL_SYSTEM,
-                title     = "⚠️ RAM élevée – $ramPercent%",
-                message   = "La RAM dépasse le seuil de ${settings.ramThreshold}% " +
-                        "(actuel : $ramPercent% — ${stats.ramUsedMb}/${stats.ramTotalMb} Mo)"
+                title     = ctx.getString(R.string.notif_ram_high_title, ramPercent),
+                message   = ctx.getString(R.string.notif_ram_high_msg, settings.ramThreshold, ramPercent, stats.ramUsedMb, stats.ramTotalMb)
             )
         }
     }
@@ -93,7 +90,8 @@ class MonitoringWorker(
             user      = settings.username,
             password  = settings.password,
             command   = "docker ps -a --format '{{.Names}},{{.Status}}'",
-            timeoutMs = settings.sshTimeoutMs
+            timeoutMs = settings.sshTimeoutMs,
+            context   = ctx
         )
 
         val currentStates: Map<String, Boolean> = output
@@ -121,8 +119,8 @@ class MonitoringWorker(
                 sendAlertOnce(
                     key       = "docker_$name",
                     channelId = NotificationHelper.CHANNEL_DOCKER,
-                    title     = "🐳 Conteneur Docker arrêté",
-                    message   = "Le conteneur « $name » s'est arrêté de manière inattendue."
+                    title     = ctx.getString(R.string.notif_docker_stopped_title),
+                    message   = ctx.getString(R.string.notif_docker_stopped_msg, name)
                 )
             }
         }
