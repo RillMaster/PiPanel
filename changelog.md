@@ -1,29 +1,63 @@
-Summary: Localization improvements and initialization bug fixes
-This update focuses on internationalizing the application and fixing premature background alerts.
+# Changelog
 
-1. Full Localization (i18n)
+All notable changes to PiPanel are documented here.
 
-•Onboarding & Configuration: Moved all hardcoded strings from OnboardingActivity.kt and Piholeconfigscreen.kt to resource files. The setup process now fully supports English and French based on system settings.
+---
 
-•Localized SSH Errors: Refactored SshClient.kt to use string resources for connection errors (timeout, auth failure, host unreachable). This fixes the issue where error messages remained in French even when the system language was English.
+## [Unreleased]
 
-•Background Services: Localized notification channel names, descriptions, and alert messages in MonitoringWorker, NotificationHelper, and WidgetUpdateService.
+### ✨ Added
 
-2. Bug Fixes
+#### 👤 Connection Profiles
+- New **Connection Profiles** system — save and manage multiple Pi configurations
+- Each profile stores: name, IP/hostname, SSH port, username, password or key
+- Switch between profiles from a dedicated menu
+- Profiles stored locally with DataStore
 
-•Premature Monitoring Alerts: Fixed a bug where the MonitoringWorker would trigger a "Raspberry Pi unreachable" notification immediately after installation. It now 
-checks if the SSH configuration is completed before attempting any connection.
+#### ⚡ Customizable Shortcuts
+- Create custom shortcuts with a name, icon and SSH command
+- **Macros** support — chain multiple commands in a single tap
+- Drag-and-drop reordering (same as existing shortcuts)
 
-•Language Consistency: Fixed various UI components where labels and buttons had mixed languages.
+#### 📐 Tablet / Landscape Mode
+- Adaptive layout using `WindowSizeClass`
+- Navigation rail + side panel in landscape and tablet mode
+- Terminal and all screens properly adapt to wide layouts
 
-3. Files Modified
+#### 🔒 WireGuard Detailed Status
+- New detailed WireGuard view — parsed output of `sudo wg show`
+- Displays: connected peers, last handshake, transferred data (rx/tx), allowed IPs
+- Auto-refresh every 30 seconds
 
-•strings.xml & app/src/main/res/values-fr/strings.xml: Added comprehensive localized strings.
+#### 📡 Network Scanner
+- New **Network Scanner** screen — scans the local network via SSH + `nmap`
+- Auto-detects the active subnet from `eth0` (no manual config needed)
+- Displays hostname, IP address, MAC address and vendor for each device
+- Smart device icons based on hostname/vendor (smartphone, laptop, router, Raspberry Pi...)
+- Auto-installs `nmap` on the Pi if not already present
+- Shows device count in the top bar subtitle
+- Error message displayed if SSH command fails (instead of silent empty list)
 
-•SshClient.kt: Integrated Context for localized error parsing.
+#### 🕐 Cron Scheduler
+- New **Cron Scheduler** screen — read, add and delete cron jobs via SSH
+- Separate input fields for minute, hour, day, month, weekday and command
+- Human-readable preview (e.g. *"Every day at 3:00 AM"*)
 
-•OnboardingActivity.kt & Piholeconfigscreen.kt: UI updated to use stringResource.
+#### ⚙️ Service Manager
+- New **Service Manager** screen — manage `systemd` services directly from the app
+- View all active services with their current status
+- **Start / Stop / Restart** any service with one tap
+- Real-time status refresh
+- Color-coded indicators (active, inactive, failed)
 
-•MonitoringWorker.kt: Added configuration check and localized alerts.
+#### 📁 File Manager
+- **Upload files** from your Android device to the Pi via SFTP
+- **Download files** from the Pi to your device
+- **Integrated file editor** — edit text files (configs, scripts...) directly in the app
+- Syntax-aware editing for common file types (`.conf`, `.yml`, `.sh`, `.py`...)
 
-•WidgetUpdateService.kt & TerminalScreen.kt: Updated for multi-language support.
+---
+
+## [Previous versions]
+
+> See Git history for earlier changes.

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">RaspberryController</string>
+    <string name="app_name">PiPanel</string>
     <string name="desc_widget_stats">Real-time CPU, RAM, and Temperature monitoring.</string>
     <string name="desc_widget_pihole">Quick control and Pi-hole blocking statistics.</string>
     <string name="desc_widget_wireguard">Enable/Disable WireGuard VPN and view clients.</string>
@@ -88,6 +88,13 @@
     <string name="settings_biometric_label">Biometrics</string>
     <string name="settings_refresh_title">Temperature Refresh</string>
     <string name="settings_shortcuts_title">Terminal Shortcuts</string>
+    <string name="settings_background_title">Background Activity</string>
+    <string name="settings_background_label">Enable background tasks</string>
+    <string name="settings_battery_optimized_on">Battery Optimization: Active</string>
+    <string name="settings_battery_optimized_off">Battery Optimization: Ignored</string>
+    <string name="settings_battery_desc_ok">The app can run freely in the background.</string>
+    <string name="settings_battery_desc_needed">The system may kill the app. Whitelist it for better widget/monitoring stability.</string>
+    <string name="action_fix">Fix</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
@@ -99,7 +106,9 @@
 
     <!-- Shortcut Dialog -->
     <string name="shortcut_dialog_label">Button Label</string>
-    <string name="shortcut_dialog_command">SSH Command</string>
+    <string name="shortcut_dialog_command">SSH Command(s)</string>
+    <string name="shortcut_dialog_icon">Icon</string>
+    <string name="shortcut_dialog_macro_hint">Enter multiple commands (one per line) for a macro.</string>
     <string name="shortcut_example_label">ex: reboot</string>
     <string name="shortcut_example_command">ex: sudo reboot</string>
 
@@ -140,6 +149,24 @@
     <string name="docker_restart">Restart</string>
     <string name="docker_status_running">RUNNING</string>
     <string name="docker_status_stopped">STOPPED</string>
+
+    <!-- Services Screen -->
+    <string name="services_title">System Services</string>
+    <string name="services_loading">Listing system services&#8230;</string>
+    <string name="services_search_placeholder">Search service (ex: nginx)&#8230;</string>
+    <string name="services_no_result">No service found</string>
+    <string name="services_start">Start</string>
+    <string name="services_stop">Stop</string>
+    <string name="services_restart">Restart</string>
+    <string name="services_status_running">RUNNING</string>
+    <string name="services_status_stopped">STOPPED</string>
+    <string name="services_status_failed">FAILED</string>
+    <string name="services_logs">Logs</string>
+    <string name="services_logs_title">Logs: %1$s</string>
+    <string name="services_logs_loading">Loading logs&#8230;</string>
+    <string name="services_logs_empty">No logs available.</string>
+    <string name="services_logs_live">Live Mode</string>
+    <string name="nav_services">Services Manager</string>
 
     <!-- Sensors Screen -->
     <string name="sensors_title">Real-time Sensors</string>
@@ -240,6 +267,7 @@
     <string name="wg_port_display">Port: %1$d</string>
     <string name="wg_active_handshake">Active · %1$s</string>
     <string name="wg_inactive_handshake">Inactive · %1$s</string>
+    <string name="wg_never">Never</string>
     <string name="qr_code_error">Error generating QR Code</string>
 
     <!-- Terminal Screen -->
@@ -324,7 +352,7 @@
     <string name="version_label">Version %1$s</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_welcome_title">Welcome to\nRaspberry Controller</string>
+    <string name="onboarding_welcome_title">Welcome to\nPiPanel</string>
     <string name="onboarding_welcome_desc">Control your Raspberry Pi from your phone — GPIO, SSH, sensors, and more.</string>
     <string name="onboarding_feature_gpio">GPIO Control (LED, relays…)</string>
     <string name="onboarding_feature_terminal">Interactive SSH Terminal</string>
@@ -434,4 +462,61 @@
     <string name="pihole_config_test_summary">Pi-hole %1$s\n• %2$d DNS queries today\n• %3$.1f%% blocked\n• %4$d domains in list</string>
     <string name="pihole_config_test_btn">Test</string>
     <string name="pihole_config_save_btn">Save</string>
+
+    <!-- File Manager Extra -->
+    <string name="file_manager_new_folder">New Folder</string>
+    <string name="file_manager_new_file">New File</string>
+    <string name="file_manager_upload">Upload File</string>
+    <string name="file_manager_download">Download</string>
+    <string name="file_manager_rename">Rename</string>
+    <string name="file_manager_show_hidden">Show hidden</string>
+    <string name="file_manager_hide_hidden">Hide hidden</string>
+    <string name="file_manager_empty">No files in this folder.</string>
+    <string name="file_manager_error_download">Error during download: %1$s</string>
+    <string name="file_manager_error_upload">Error during upload: %1$s</string>
+    <string name="file_manager_download_success">File downloaded to Downloads.</string>
+    <string name="file_manager_upload_success">File uploaded successfully.</string>
+    <string name="file_manager_enter_name">Enter name</string>
+
+    <!-- Connection Profiles -->
+    <string name="profiles_title">Connection Profiles</string>
+    <string name="profile_name_label">Profile Name</string>
+    <string name="profile_add_title">Add Profile</string>
+    <string name="profile_edit_title">Edit Profile</string>
+    <string name="profile_switch_action">Switch Profile</string>
+    <string name="profile_delete_confirm">Delete this profile?</string>
+    <string name="profile_active">Active</string>
+    <string name="profile_default_name">Raspberry Pi</string>
+    <string name="nav_profiles">Profiles</string>
+
+    <!-- Network Scanner -->
+    <string name="net_scan_title">Network Scanner</string>
+    <string name="net_scan_loading">Scanning local network&#8230;</string>
+    <string name="net_scan_empty">No devices found.</string>
+    <string name="net_scan_install_nmap">Installing nmap (required)&#8230;</string>
+    <string name="net_scan_nmap_not_found">nmap is not installed on your Pi. Would you like to install it now?</string>
+    <string name="net_scan_device_online">Online</string>
+    <string name="net_scan_device_offline">Offline</string>
+    <string name="net_scan_unknown_host">Unknown Host</string>
+    <string name="net_scan_devices_found">devices found</string>
+    <string name="nav_net_scan">Network Scanner</string>
+
+    <!-- Cron Scheduler -->
+    <string name="cron_title">Cron Scheduler</string>
+    <string name="cron_loading">Loading crontab&#8230;</string>
+    <string name="cron_empty">No cron tasks found.</string>
+    <string name="cron_add_title">New Cron Task</string>
+    <string name="cron_edit_title">Edit Cron Task</string>
+    <string name="cron_delete_confirm">Delete this task?</string>
+    <string name="cron_minute">Minute</string>
+    <string name="cron_hour">Hour</string>
+    <string name="cron_dom">Day of Month</string>
+    <string name="cron_month">Month</string>
+    <string name="cron_dow">Day of Week</string>
+    <string name="cron_command">Command</string>
+    <string name="cron_preview_every_minute">Every minute</string>
+    <string name="cron_preview_daily">Every day at %1$s:%2$s</string>
+    <string name="cron_preview_weekly">Every %1$s at %2$s:%3$s</string>
+    <string name="cron_save_success">Crontab updated successfully</string>
+    <string name="nav_cron">Cron Scheduler</string>
 </resources>

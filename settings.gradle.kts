@@ -23,5 +23,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RaspberryController"
+rootProject.name = "PiPanel"
 include(":app")

@@ -8,15 +8,15 @@ plugins {
 
 @Suppress("DEPRECATION")
 android {
-    namespace = "com.example.raspberrycontroller"
+    namespace = "com.rillmaster.pipanel"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.raspberrycontroller"
+        applicationId = "com.rillmaster.pipanel"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.5.1"
+        versionCode = 14
+        versionName = "1.5.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -58,6 +58,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.material3.windowSizeClass)
     implementation(libs.androidx.material.icons.extended)
     testImplementation(libs.junit)
     testImplementation("io.mockk:mockk:1.13.13")
@@ -76,6 +77,9 @@ dependencies {
     implementation(libs.play.services.code.scanner)
     implementation(libs.zxing.core)
     implementation(libs.androidx.biometric)
+    implementation("androidx.fragment:fragment-ktx:1.8.9")
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.glance.material3)
+    
+    implementation(libs.androidx.datastore.preferences)
 }
