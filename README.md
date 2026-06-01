@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.webp" width="140" alt="PiPanel Logo"/>
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.webp" width="240" alt="PiPanel Logo"/>
 
 # PiPanel
 
