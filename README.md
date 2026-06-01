@@ -123,17 +123,40 @@ On first launch, enter your Pi's:
 
 ```
 app/src/main/java/com/rillmaster/pipanel/
-├── MainActivity.kt              # Entry point, navigation
-├── SshClient.kt                 # SSH connection manager
-├── SettingsManager.kt           # Credentials & config storage
-├── DashboardScreen.kt           # CPU / RAM / temp overview
-├── DockerScreen.kt              # Docker container management
-├── NetworkScannerScreen.kt      # Local network scanner
-├── TerminalScreen.kt            # VT100 terminal emulator
-├── GpioScreen.kt                # GPIO controls
-├── WireGuardScreen.kt           # WireGuard toggle
-├── PiholeScreen.kt              # Pi-hole toggle
-└── ui/theme/                    # Material You theming
+├── MainActivity.kt                  # Entry point, navigation
+├── OnboardingActivity.kt            # First-launch setup flow
+├── SshClient.kt                     # SSH connection manager
+├── SettingsManager.kt               # Credentials & config storage
+├── ApiService.kt                    # API service interface
+├── BiometricHelper.kt               # Biometric authentication
+├── UpdateManager.kt                 # Automatic update system
+│
+├── DockerScreen.kt                  # Docker container management
+├── FileManagerScreen.kt             # Remote file browser
+├── TextEditorScreen.kt              # In-app text/file editor
+├── TerminalScreen.kt                # VT100/xterm-256color terminal
+├── MonitoringScreen.kt              # CPU / RAM / metrics overview
+├── SensorDashboardScreen.kt         # Sensor data dashboard
+├── GpioScheduleScreen.kt            # GPIO scheduling & controls
+├── PwmSliderScreen.kt               # PWM control sliders
+├── Wireguardscreen.kt               # WireGuard VPN toggle & info
+├── Piholescreen.kt                  # Pi-hole toggle
+├── Piholeconfigscreen.kt            # Pi-hole advanced config
+├── UfwScreen.kt                     # UFW firewall management
+├── Fail2BanScreen.kt                # Fail2Ban monitoring
+├── LogsViewerScreen.kt              # System logs viewer
+├── NotificationSettingsScreen.kt    # Notification thresholds config
+│
+├── MonitoringWorker.kt              # Background WorkManager worker
+├── NotificationHelper.kt           # Notification builder/helper
+├── WidgetUpdateService.kt           # Background widget refresh service
+│
+├── PiHoleWidget.kt                  # Pi-hole home screen widget
+├── StatsWidget.kt                   # Stats home screen widget
+├── SensorWidget.kt                  # Sensor home screen widget
+├── WireGuardWidget.kt               # WireGuard home screen widget
+│
+└── ui/theme/                        # Material You theming
 ```
 
 ---
