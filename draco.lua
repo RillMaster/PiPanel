@@ -12,7 +12,6 @@ if not monitor then
   return
 end
 
--- Ajustez la taille du texte si besoin (1 est le plus petit/fin, 5 est très gros)
 monitor.setTextScale(1)
 
 -- Fonction pour formater proprement les grands nombres (RF / OP)
@@ -32,7 +31,12 @@ while true do
   local energyStored = core.getEnergyStored and core.getEnergyStored() or 0
   local maxEnergy = core.getMaxEnergyStored and core.getMaxEnergyStored() or 0
   
-  -- Estimation ou récupération du Tier
+  -- Récupération du flux si disponible via l'API, ou simulation/estimation
+  local transfer = core.getTransferPerTick and core.getTransferPerTick() or 0
+  
+  -- Si getTransferPerTick n'existe pas ou renvoie 0, on peut interroger les autres faces/périphériques connectés si besoin, 
+  -- mais en général Draconic Evolution expose le flux global ou par port.
+  
   local tier = "Inconnu"
   if core.getTier then
     tier = core.getTier()
@@ -60,6 +64,10 @@ while true do
   
   monitor.setCursorPos(2, 9)
   monitor.write(string.format("Remplissage : %.2f%%", percentage))
+
+  -- Affichage des flux d'énergie (Entrée / Sortie)
+  monitor.setCursorPos(2, 11)
+  monitor.write("Flux Actuel : " .. formatEnergy(transfer) .. "/t")
 
   -- Actualisation toutes les secondes
   sleep(1)
