@@ -4,7 +4,7 @@ All notable changes to PiPanel are documented here.
 
 ---
 
-## [Unreleased]
+## [1.5.2]
 
 ### ✨ Added
 
@@ -55,6 +55,48 @@ All notable changes to PiPanel are documented here.
 - **Download files** from the Pi to your device
 - **Integrated file editor** — edit text files (configs, scripts...) directly in the app
 - Syntax-aware editing for common file types (`.conf`, `.yml`, `.sh`, `.py`...)
+
+---
+
+## [1.5.3]
+
+### ✨ Added
+
+#### 🗄️ Local Metrics Database (Room)
+- System metrics (CPU, RAM, temperature) are now **stored locally in a Room database**
+- Collected every 15 minutes by the monitoring worker
+- 7-day retention with automatic cleanup
+
+#### 📊 24h Charts
+- New **Charts** screen — 24h history graphs powered by the local database
+- CPU % + temperature curves (dual series) and RAM usage graph
+- Accessible from the navigation drawer and the dashboard Services section
+
+#### 🎨 Animated Theme Transition
+- Theme changes (light/dark) are now **smoothly animated** instead of instant
+
+#### 🧩 Customizable Dashboard
+- **Reorder dashboard sections** (Stats, GPIO, Services, Terminal) via drag-and-drop
+- **Hide/show sections** individually — layout persisted across restarts
+- New edit mode (pencil icon in the top bar)
+
+#### 🏠 "At a Glance" Card
+- New summary card on the dashboard: Pi-hole status (blocked domains), Docker container count
+- **Quick action button** — reboot the Pi with confirmation dialog
+
+#### 🌡️ CPU Temperature Widget
+- New home screen widget showing live CPU temperature
+- Turns red and sends an alert notification above **70°C**
+
+#### 🐳 Docker Widget
+- New home screen widget showing **running/total containers**
+- Tap to open the Docker screen directly
+
+### 🔔 Notifications
+- **Disk space alerts** — configurable threshold (default 85%), checks `df` usage
+- **Critical services alerts** — monitors systemd services (`systemctl is-active`), customizable service list (default: ssh, docker, pihole-FTL)
+- New dedicated notification channel for service alerts
+- Pi-hole widget now shows a "Switching…" pending state during toggles
 
 ---
 

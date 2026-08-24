@@ -21,6 +21,13 @@
 - Live **CPU temperature** with color-coded indicator
 - Real-time **CPU & RAM** usage
 - Quick status overview at a glance
+- **Customizable layout** — reorder sections via drag-and-drop, hide/show individually
+- **"At a Glance" card** — Pi-hole status, Docker container count, one-tap Pi reboot
+- Smooth **animated theme transitions** (light/dark)
+
+### 📊 History & Charts
+- **24h charts** for CPU, temperature and RAM (powered by local Room DB)
+- Metrics collected every 15 minutes, 7-day retention
 
 ### 🐳 Docker
 - List all containers with status
@@ -45,6 +52,12 @@
 - Enable / Disable Pi-hole with one tap
 - Home screen widget for quick toggle
 
+### 📱 Home Screen Widgets
+- **Pi-hole** quick toggle
+- **CPU temperature** with alert above 70°C
+- **Docker** running/total container counter
+- **Stats** and **Sensor** widgets
+
 ### 💻 Terminal
 - Full **VT100 / xterm-256color** terminal emulator
 - PTY support with sticky modifier keys (Ctrl, Alt, etc.)
@@ -52,6 +65,8 @@
 
 ### 🔔 Notifications
 - CPU & RAM threshold alerts via **WorkManager**
+- **Disk space alerts** with configurable threshold
+- **Critical services monitoring** (`systemd` services, customizable list)
 - Background monitoring with configurable thresholds
 
 ### 🔐 Security
@@ -116,6 +131,9 @@ On first launch, enter your Pi's:
 | Auth | AndroidX Biometric |
 | Terminal | Custom VT100/xterm-256color renderer |
 | Drag & drop | `sh.calvin.reorderable` |
+| Local database | Room (metrics history) |
+| Charts | Vico |
+| Widgets | Glance |
 
 ---
 
@@ -136,6 +154,8 @@ app/src/main/java/com/rillmaster/pipanel/
 ├── TextEditorScreen.kt              # In-app text/file editor
 ├── TerminalScreen.kt                # VT100/xterm-256color terminal
 ├── MonitoringScreen.kt              # CPU / RAM / metrics overview
+├── ChartsScreen.kt                  # 24h history charts (Vico + Room)
+├── DashboardPrefs.kt                # Dashboard layout preferences (DataStore)
 ├── SensorDashboardScreen.kt         # Sensor data dashboard
 ├── GpioScheduleScreen.kt            # GPIO scheduling & controls
 ├── PwmSliderScreen.kt               # PWM control sliders
@@ -155,6 +175,10 @@ app/src/main/java/com/rillmaster/pipanel/
 ├── StatsWidget.kt                   # Stats home screen widget
 ├── SensorWidget.kt                  # Sensor home screen widget
 ├── WireGuardWidget.kt               # WireGuard home screen widget
+├── CpuTempWidget.kt                 # CPU temperature widget (alert > 70°C)
+├── DockerWidget.kt                  # Docker container count widget
+│
+├── data/db/                         # Room database (metrics history)
 │
 └── ui/theme/                        # Material You theming
 ```
