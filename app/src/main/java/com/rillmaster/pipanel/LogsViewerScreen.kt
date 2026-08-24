@@ -29,8 +29,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun LogsViewerScreen(
     settings: SettingsManager,
-    onClose: () -> Unit,
-    onOpenMenu: () -> Unit
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     var logs by remember { mutableStateOf<List<String>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -94,8 +94,10 @@ fun LogsViewerScreen(
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = null)
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = null)
+                        }
                     }
                 },
                 actions = {

@@ -16,15 +16,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// ── Palette éditeur (cohérente avec le terminal) ──────────────────────────────
 private val EditorBg       = Color(0xFF0D0D0D)
 private val EditorGutter   = Color(0xFF1A1A1A)
 private val EditorLineNum  = Color(0xFF4A4A4A)
@@ -36,15 +43,6 @@ private val EditorDirty    = Color(0xFFFCE94F)
 private val EditorSaved    = Color(0xFF39FF14)
 private val EditorError    = Color(0xFFEF2929)
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  TextEditorScreen
-//
-//  filePath — chemin absolu du fichier sur le serveur
-//  initialContent — contenu lu via SSH (peut être vide si fichier nouveau)
-//  isLoading — true pendant le chargement du fichier
-//  onSave — suspend lambda : reçoit le contenu, retourne true si succès
-//  onClose — ferme l'éditeur et revient au terminal
-// ══════════════════════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TextEditorScreen(
@@ -65,7 +63,6 @@ fun TextEditorScreen(
     var saveMessage      by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val showDiscardDlg   = remember { mutableStateOf(value = false) }
 
-    // ── Stats curseur ──────────────────────────────────────────────────────────
     val cursorPos = textValue.selection.start.coerceAtMost(textValue.text.length)
     val currentLine = remember(cursorPos, textValue.text) {
         textValue.text.substring(0, cursorPos).count { it == '\n' } + 1
@@ -77,7 +74,6 @@ fun TextEditorScreen(
         textValue.text.count { it == '\n' } + 1
     }
 
-    // ── Sauvegarde ─────────────────────────────────────────────────────────────
     fun save() {
         if (isSaving) return
         scope.launch {
@@ -91,7 +87,6 @@ fun TextEditorScreen(
         }
     }
 
-    // ── Dialog abandon ─────────────────────────────────────────────────────────
     if (showDiscardDlg.value) {
         AlertDialog(
             onDismissRequest = { showDiscardDlg.value = false },
@@ -124,58 +119,24 @@ fun TextEditorScreen(
                 title = {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text       = fileName,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize   = 15.sp,
-                                color      = EditorText,
-                            )
+                            Text(text = fileName, fontFamily = FontFamily.Monospace, fontSize = 15.sp, color = EditorText)
                             if (isDirty) {
                                 Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "●",
-                                    color      = EditorDirty,
-                                    fontSize   = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                )
+                                Text("●", color = EditorDirty, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                             }
                         }
-                        Text(
-                            text       = filePath,
-                            style      = MaterialTheme.typography.labelSmall,
-                            color      = EditorLineNum,
-                            fontFamily = FontFamily.Monospace,
-                        )
+                        Text(text = filePath, style = MaterialTheme.typography.labelSmall, color = EditorLineNum, fontFamily = FontFamily.Monospace)
                     }
                 },
                 actions = {
-                    // Message save/erreur
                     saveMessage?.let { (msg, ok) ->
-                        Text(
-                            text       = msg,
-                            color      = if (ok) EditorSaved else EditorError,
-                            fontSize   = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            modifier   = Modifier.padding(end = 8.dp),
-                        )
+                        Text(text = msg, color = if (ok) EditorSaved else EditorError, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(end = 8.dp))
                     }
-                    // Bouton sauvegarder
-                    IconButton(
-                        onClick  = ::save,
-                        enabled  = !isSaving && !isLoading && isDirty,
-                    ) {
+                    IconButton(onClick  = ::save, enabled  = !isSaving && !isLoading && isDirty) {
                         if (isSaving) {
-                            CircularProgressIndicator(
-                                modifier  = Modifier.size(18.dp),
-                                color     = EditorCaret,
-                                strokeWidth = 2.dp,
-                            )
+                            CircularProgressIndicator(modifier  = Modifier.size(18.dp), color     = EditorCaret, strokeWidth = 2.dp)
                         } else {
-                            Icon(
-                                Icons.Default.Save,
-                                contentDescription = "Sauvegarder",
-                                tint = if (isDirty) EditorCaret else EditorLineNum,
-                            )
+                            Icon(Icons.Default.Save, contentDescription = "Sauvegarder", tint = if (isDirty) EditorCaret else EditorLineNum)
                         }
                     }
                 },
@@ -183,131 +144,63 @@ fun TextEditorScreen(
             )
         },
         bottomBar = {
-            // Barre de statut — ligne / col / total lignes
             HorizontalDivider(color = EditorDivider, thickness = 0.5.dp)
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(EditorBar)
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().background(EditorBar).padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically,
             ) {
-                Text(
-                    text       = "Ln $currentLine, Col $currentCol",
-                    color      = EditorLineNum,
-                    fontSize   = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                )
-                Text(
-                    text       = "$lineCount ligne${if (lineCount > 1) "s" else ""}  •  UTF-8",
-                    color      = EditorLineNum,
-                    fontSize   = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                )
+                Text(text = "Ln $currentLine, Col $currentCol", color = EditorLineNum, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                Text(text = "$lineCount ligne${if (lineCount > 1) "s" else ""}  •  UTF-8", color = EditorLineNum, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             }
         },
         containerColor = EditorBg,
     ) { padding ->
-
         if (isLoading) {
-            // ── Chargement ───────────────────────────────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(EditorBg),
-                contentAlignment = Alignment.Center,
-            ) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding).background(EditorBg), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = EditorCaret)
                     Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Chargement de $fileName…",
-                        color      = EditorLineNum,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize   = 12.sp,
-                    )
+                    Text("Chargement de $fileName…", color = EditorLineNum, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                 }
             }
         } else {
-            // ── Éditeur ──────────────────────────────────────────────────────
             val hScroll = rememberScrollState()
             val vScroll = rememberScrollState()
 
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(EditorBg)
-                    .imePadding()
-            ) {
-                // ── Gouttière numéros de lignes ───────────────────────────────
-                val lines = remember(textValue.text) {
-                    textValue.text.split('\n')
-                }
+            Row(modifier = Modifier.fillMaxSize().padding(padding).background(EditorBg).imePadding()) {
+                val lines = remember(textValue.text) { textValue.text.split('\n') }
                 val gutterWidth = when {
                     lineCount < 100   -> 36.dp
                     lineCount < 1000  -> 46.dp
                     else              -> 56.dp
                 }
 
-                Box(
-                    modifier = Modifier
-                        .width(gutterWidth)
-                        .fillMaxHeight()
-                        .background(EditorGutter)
-                        .verticalScroll(vScroll)
-                        .padding(end = 6.dp, top = 4.dp, bottom = 4.dp)
-                ) {
+                Box(modifier = Modifier.width(gutterWidth).fillMaxHeight().background(EditorGutter).verticalScroll(vScroll).padding(end = 6.dp, top = 4.dp, bottom = 4.dp)) {
                     Column(horizontalAlignment = Alignment.End, modifier = Modifier.fillMaxWidth()) {
                         lines.forEachIndexed { idx, _ ->
                             val lineNum = idx + 1
-                            Text(
-                                text       = lineNum.toString(),
-                                color      = if (lineNum == currentLine) EditorCaret.copy(0.7f) else EditorLineNum,
-                                fontSize   = 12.sp,
-                                fontFamily = FontFamily.Monospace,
-                                lineHeight = (12 * 1.6f).sp
-                            )
+                            Text(text = lineNum.toString(), color = if (lineNum == currentLine) EditorCaret.copy(0.7f) else EditorLineNum, fontSize = 12.sp, fontFamily = FontFamily.Monospace, lineHeight = (12 * 1.6f).sp)
                         }
                     }
                 }
 
-                // Séparateur gouttière / éditeur
                 Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(EditorDivider))
 
-                // ── Champ de texte ────────────────────────────────────────────
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .verticalScroll(vScroll)
-                        .horizontalScroll(hScroll)
-                        .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
-                ) {
+                Box(modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(vScroll).horizontalScroll(hScroll).padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)) {
                     BasicTextField(
                         value         = textValue,
                         onValueChange = { nv ->
                             textValue = nv
                             if ((!isDirty) && (nv.text != initialContent)) isDirty = true
                         },
-                        textStyle     = TextStyle(
-                            color      = EditorText,
-                            fontSize   = 13.sp,
-                            fontFamily = FontFamily.Monospace,
-                            lineHeight  = (13 * 1.6f).sp
-                        ),
-                        cursorBrush = SolidColor(EditorCaret),
-                        modifier    = Modifier.fillMaxWidth(),
+                        textStyle     = TextStyle(color = EditorText, fontSize = 13.sp, fontFamily = FontFamily.Monospace, lineHeight  = (13 * 1.6f).sp),
+                        cursorBrush   = SolidColor(EditorCaret),
+                        modifier      = Modifier.fillMaxWidth(),
+                        visualTransformation = SyntaxHighlightTransformation(fileName.substringAfterLast('.', "")),
                         decorationBox = { innerTextField ->
                             if (textValue.text.isEmpty()) {
-                                Text(
-                                    "Fichier vide — commencez à taper…",
-                                    color      = EditorLineNum,
-                                    fontSize   = 13.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
+                                Text("Fichier vide — commencez à taper…", color = EditorLineNum, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
                             }
                             innerTextField()
                         }
@@ -318,41 +211,73 @@ fun TextEditorScreen(
     }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  Helpers SSH pour lire / écrire un fichier distant
-// ══════════════════════════════════════════════════════════════════════════════
+class SyntaxHighlightTransformation(val extension: String) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        return TransformedText(highlightSyntax(text.text, extension), OffsetMapping.Identity)
+    }
+}
+
+private fun highlightSyntax(code: String, ext: String): AnnotatedString {
+    val keywords = when (ext.lowercase()) {
+        "py" -> setOf("def", "class", "if", "else", "elif", "for", "while", "return", "import", "from", "as", "try", "except", "with", "print", "in", "is", "not", "and", "or", "True", "False", "None")
+        "sh", "bash" -> setOf("if", "then", "else", "fi", "for", "do", "done", "while", "until", "case", "esac", "function", "echo", "exit", "sudo", "apt", "mkdir", "rm", "cp", "mv")
+        "js", "json" -> setOf("var", "let", "const", "function", "if", "else", "for", "while", "return", "import", "export", "class", "try", "catch", "true", "false", "null")
+        else -> emptySet()
+    }
+
+    return buildAnnotatedString {
+        var lastIdx = 0
+        val regex = Regex("""(\b\w+\b)|(".*?")|('.*?')|(//.*)|(#.*)""")
+        regex.findAll(code).forEach { match ->
+            append(code.substring(lastIdx, match.range.first))
+            val str = match.value
+            when {
+                str.startsWith("\"") || str.startsWith("'") -> {
+                    withStyle(SpanStyle(color = Color(0xFFCE9178))) { append(str) }
+                }
+                str.startsWith("//") || str.startsWith("#") -> {
+                    withStyle(SpanStyle(color = Color(0xFF6A9955))) { append(str) }
+                }
+                keywords.contains(str) -> {
+                    withStyle(SpanStyle(color = Color(0xFF569CD6), fontWeight = FontWeight.Bold)) { append(str) }
+                }
+                str.all { it.isDigit() } -> {
+                    withStyle(SpanStyle(color = Color(0xFFB5CEA8))) { append(str) }
+                }
+                else -> append(str)
+            }
+            lastIdx = match.range.last + 1
+        }
+        append(code.substring(lastIdx))
+    }
+}
+
 object RemoteFileHelper {
-
-    /** Lit un fichier distant via SSH exec, retourne le contenu ou "" si absent. */
     suspend fun readFile(settings: SettingsManager, filePath: String): String =
-        SshClient.execute(
-            host     = settings.host,
-            port     = settings.port,
-            user     = settings.username,
-            password = settings.password,
-            command  = "cat \"$filePath\" 2>/dev/null || true"
-        )
+        SshClient.execute(host = settings.host, port = settings.port, user = settings.username, password = settings.password, command = "cat \"$filePath\" 2>/dev/null || true")
 
-    /**
-     * Écrit un fichier distant en encodant le contenu en base64 pour éviter
-     * tout problème de caractères spéciaux / apostrophes / sauts de ligne.
-     * Retourne true si succès.
-     */
     suspend fun writeFile(settings: SettingsManager, filePath: String, content: String): Boolean {
-        val encoded = Base64.encodeToString(
-            content.toByteArray(Charsets.UTF_8),
-            Base64.NO_WRAP
-        )
-        // Écriture atomique : on écrit dans un temp puis on déplace
+        val encoded = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val tmpPath = "/tmp/.editor_${System.currentTimeMillis()}"
         val cmd = "printf '%s' '$encoded' | base64 -d > \"$tmpPath\" && mv \"$tmpPath\" \"$filePath\""
-        val result = SshClient.execute(
-            host     = settings.host,
-            port     = settings.port,
-            user     = settings.username,
-            password = settings.password,
-            command  = cmd
-        )
+        val result = SshClient.execute(host = settings.host, port = settings.port, user = settings.username, password = settings.password, command = cmd)
         return !result.startsWith("[err]")
+    }
+
+    suspend fun getThumbnail(settings: SettingsManager, filePath: String, type: String): android.graphics.Bitmap? {
+        val cmd = when (type) {
+            "video" -> "ffmpeg -i \"$filePath\" -ss 00:00:01 -vframes 1 -s 128:128 -f mjpeg - 2>/dev/null | base64"
+            "audio" -> "ffmpeg -i \"$filePath\" -an -vcodec copy -f mjpeg - 2>/dev/null | base64"
+            "image" -> "ffmpeg -i \"$filePath\" -vf \"scale=128:128:force_original_aspect_ratio=decrease\" -f mjpeg - 2>/dev/null | base64"
+            else -> return null
+        }
+        val b64 = SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd).trim()
+        if (b64.isEmpty() || b64.startsWith("[err]")) return null
+        return try {
+            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (_: Exception) {
+            null
+        }
     }
 }

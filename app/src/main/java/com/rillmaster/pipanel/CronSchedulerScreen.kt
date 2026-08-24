@@ -39,7 +39,11 @@ data class CronTask(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CronSchedulerScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
+fun CronSchedulerScreen(
+    settings: SettingsManager, 
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
+) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var tasks by remember { mutableStateOf<List<CronTask>>(emptyList()) }
@@ -51,7 +55,7 @@ fun CronSchedulerScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
     fun refreshTasks() {
         scope.launch {
             loading = true
-            val raw = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "crontab -l", 10000)
+            val raw = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "crontab -l", 10000, privateKey = settings.privateKey, keyPassphrase = settings.keyPassphrase)
             if (raw.startsWith("[err]") || raw.contains("no crontab")) {
                 tasks = emptyList()
             } else {
@@ -88,7 +92,7 @@ fun CronSchedulerScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
             }
             // Use a temporary file to update crontab safely
             val cmd = "printf \"$crontabContent\\n\" | crontab -"
-            val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd)
+            val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd, privateKey = settings.privateKey, keyPassphrase = settings.keyPassphrase)
             if (!res.startsWith("[err]")) {
                 snackbarHostState.showSnackbar(successMsg)
                 refreshTasks()
@@ -109,8 +113,10 @@ fun CronSchedulerScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
             TopAppBar(
                 title = { Text(stringResource(R.string.cron_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 },
                 actions = {

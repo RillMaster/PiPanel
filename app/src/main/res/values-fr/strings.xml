@@ -44,6 +44,8 @@
     <string name="action_save">Enregistrer la configuration</string>
     <string name="action_delete">Supprimer</string>
     <string name="action_move">Déplacer</string>
+    <string name="action_show">Afficher</string>
+    <string name="action_hide">Masquer</string>
     <string name="action_start">Démarrer</string>
     <string name="action_stop">Arrêter</string>
 
@@ -258,7 +260,7 @@
     <string name="wg_client_name_label">Nom du client</string>
     <string name="wg_client_name_hint">ex : Pc RillMaster</string>
     <string name="wg_endpoint_label">Endpoint (IP Publique ou DNS)</string>
-    <string name="wg_endpoint_hint">ex : 82.225.223.88</string>
+    <string name="wg_endpoint_hint">ex : 208.67.222.222</string>
     <string name="wg_port_label">Port de l\'interface (Serveur)</string>
     <string name="wg_dns_label">DNS</string>
     <string name="wg_allowed_ips_label">Allowed IPs (Client)</string>
@@ -418,6 +420,8 @@
     <string name="notif_channel_watchdog_desc">Alerte si le Raspberry Pi devient injoignable</string>
     <string name="notif_channel_docker_name">Services Docker</string>
     <string name="notif_channel_docker_desc">Alerte si un conteneur Docker tombe</string>
+    <string name="notif_channel_services_name">Services critiques</string>
+    <string name="notif_channel_services_desc">Alerte si un service critique est inactif ou en échec</string>
 
     <string name="notif_pi_unreachable_title">🔴 Raspberry Pi injoignable</string>
     <string name="notif_pi_unreachable_msg">Impossible de contacter le Raspberry Pi. Vérifiez la connexion réseau ou l\'alimentation.</string>
@@ -427,10 +431,25 @@
     <string name="notif_ram_high_msg">La RAM dépasse le seuil de %1$d%% (actuel : %2$d%% — %3$d/%4$d Mo)</string>
     <string name="notif_docker_stopped_title">🐳 Conteneur Docker arrêté</string>
     <string name="notif_docker_stopped_msg">Le conteneur « %1$s » s\'est arrêté de manière inattendue.</string>
+    <string name="notif_temp_high_title">🌡️ Température élevée – %1$.1f°C</string>
+    <string name="notif_temp_high_msg">La température CPU dépasse le seuil de %1$d°C (actuelle : %2$.1f°C)</string>
+    <string name="notif_disk_high_title">💾 Espace disque faible – %1$d%%</string>
+    <string name="notif_disk_high_msg">L\'utilisation du disque / dépasse le seuil de %1$d%% (actuelle : %2$d%%)</string>
+    <string name="notif_service_down_title">⚙️ Service critique arrêté</string>
+    <string name="notif_service_down_msg">Le service « %1$s » est %2$s sur le Raspberry Pi.</string>
+
+    <!-- Réglages notifications : disque & services -->
+    <string name="notif_settings_disk_title">Alerte espace disque</string>
+    <string name="notif_settings_disk_threshold">Seuil d\'utilisation disque</string>
+    <string name="notif_settings_services_title">Services critiques</string>
+    <string name="notif_settings_services_desc">Alerte envoyée si l\'un de ces services est inactif ou en échec.</string>
+    <string name="notif_settings_services_list_label">Services à surveiller (séparés par des virgules)</string>
 
     <!-- Widget Service -->
     <string name="widget_service_title">Surveillance Widget</string>
     <string name="widget_service_desc">Mise à jour des statistiques en temps réel...</string>
+    <string name="desc_widget_cpu_temp">Température CPU actuelle avec alerte de surchauffe.</string>
+    <string name="desc_widget_docker">Conteneurs Docker actifs/totaux en un coup d\'œil.</string>
 
     <!-- Pi-hole Configuration -->
     <string name="pihole_config_title">Configuration Pi-hole</string>
@@ -499,6 +518,14 @@
     <string name="net_scan_device_offline">Hors ligne</string>
     <string name="net_scan_unknown_host">Hôte inconnu</string>
     <string name="net_scan_devices_found">appareils trouvés</string>
+    <string name="net_scan_search_placeholder">Chercher appareil (IP, nom, MAC, vendeur)&#8230;</string>
+    <string name="net_scan_search_no_result">Aucun appareil ne correspond à votre recherche</string>
+    <string name="net_scan_gateway_label">Passerelle</string>
+    <string name="net_scan_copy_ip_action">Appui long pour copier l\'IP</string>
+    <string name="net_scan_ip_copied">Adresse IP copiée : %1$s</string>
+    <string name="net_scan_auto_refresh">Auto-actualisation</string>
+    <string name="net_scan_last_scan">Dernier scan : %1$s</string>
+    <string name="net_scan_retry">Réessayer</string>
     <string name="nav_net_scan">Scanner Réseau</string>
 
     <!-- Planificateur Cron -->
@@ -519,4 +546,24 @@
     <string name="cron_preview_weekly">Chaque %1$s à %2$s:%3$s</string>
     <string name="cron_save_success">Crontab mise à jour avec succès</string>
     <string name="nav_cron">Tâches Cron</string>
+    <!-- Phase 2 : dashboard personnalisable, graphiques, coup d'œil -->
+    <string name="nav_charts">Graphiques 24 h</string>
+    <string name="charts_title">Graphiques — dernières 24 h</string>
+    <string name="charts_cpu_temp">CPU &amp; température</string>
+    <string name="charts_ram">Utilisation RAM (Mo)</string>
+    <string name="charts_empty">Pas encore de données — les relevés arrivent toutes les 15 min</string>
+    <string name="dash_customize">Personnaliser le tableau de bord</string>
+    <string name="dash_customize_done">Terminer</string>
+    <string name="dash_section_stats">Stats système</string>
+    <string name="dash_section_terminal">Terminal rapide</string>
+    <string name="dash_drag_section">Glisser pour réordonner</string>
+    <string name="glance_title">Coup d’œil</string>
+    <string name="glance_pihole_blocked">%1$d domaines bloqués</string>
+    <string name="glance_docker_count">Docker : %1$d actifs / %2$d au total</string>
+    <string name="glance_reboot">Redémarrer le Pi</string>
+    <string name="glance_reboot_title">Redémarrer le Pi ?</string>
+    <string name="glance_reboot_msg">Le Raspberry Pi va redémarrer immédiatement. Continuer ?</string>
+    <string name="glance_unavailable">N/D</string>
+    <string name="glance_pihole_blocked_fmt">%1$d domaines bloqués</string>
+    <string name="glance_docker_count_fmt">Docker : %1$d actifs / %2$d au total</string>
 </resources>

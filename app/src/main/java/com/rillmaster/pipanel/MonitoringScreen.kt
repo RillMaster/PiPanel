@@ -2,7 +2,20 @@ package com.rillmaster.pipanel
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -12,6 +25,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.*
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -115,7 +129,7 @@ print(
 //  Fetch SSH (withContext IO + script passé via base64)
 // ══════════════════════════════════════════════════════════════════════════════
 
-suspend fun fetchExtendedStats(settings: SettingsManager): ExtendedStats? =
+suspend fun fetchExtendedStats(settings: SettingsManager, context: android.content.Context? = null): ExtendedStats? =
     withContext(Dispatchers.IO) {
         try {
             val b64 = android.util.Base64.encodeToString(
@@ -127,7 +141,7 @@ suspend fun fetchExtendedStats(settings: SettingsManager): ExtendedStats? =
 
             val raw = SshClient.execute(
                 settings.host, settings.port, settings.username, settings.password,
-                cmd, settings.sshTimeoutMs
+                cmd, settings.sshTimeoutMs, context
             )
 
             val sections  = raw.split("---DISK---")
@@ -418,10 +432,14 @@ fun DiskBar(disk: DiskPartition) {
 //  Écran principal : Monitoring avancé
 // ══════════════════════════════════════════════════════════════════════════════
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun MonitoringScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
-
+fun MonitoringScreen(
+    settings: SettingsManager,
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true,
+    isWide: Boolean = false
+) {
     val cpuHistory  = remember { mutableStateListOf<Float>() }
     val ramHistory  = remember { mutableStateListOf<Float>() }
     val tempHistory = remember { mutableStateListOf<Float>() }
@@ -435,9 +453,10 @@ fun MonitoringScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
     var rxSpeed by remember { mutableLongStateOf(0L) }
     var txSpeed by remember { mutableLongStateOf(0L) }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
         while (true) {
-            val stats = fetchExtendedStats(settings)
+            val stats = fetchExtendedStats(settings, context)
 
             if (stats != null) {
                 if (lastNetRx > 0) {
@@ -483,8 +502,10 @@ fun MonitoringScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -513,20 +534,25 @@ fun MonitoringScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
                     }
                 }
             } else {
-                Column(
+                FlowRow(
                     modifier            = Modifier
                         .padding(padding)
                         .padding(horizontal = 16.dp)
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    maxItemsInEachRow = if (isWide) 2 else 1
                 ) {
-                    Spacer(Modifier.height(8.dp))
+                    val itemModifier = if (isWide) Modifier.fillMaxWidth(0.48f) else Modifier.fillMaxWidth()
+                    
+                    Spacer(Modifier.height(8.dp).fillMaxWidth())
 
                     if (error) {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                            shape = RoundedCornerShape(16.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
                                 modifier = Modifier.padding(16.dp),
@@ -544,54 +570,62 @@ fun MonitoringScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
                     }
 
                     // ── CPU ──────────────────────────────────────────────────────
-                    AnimatedVisibility(visible = cpuHistory.isNotEmpty()) {
-                        ChartCard(
-                            title    = stringResource(R.string.cpu_load_title, current?.base?.cpuPercent ?: 0),
-                            values   = cpuHistory.toList(),
-                            color    = Color(0xFF2196F3),
-                            maxValue = 100f,
-                            unit     = "%"
-                        )
+                    if (cpuHistory.isNotEmpty()) {
+                        Box(modifier = itemModifier) {
+                            ChartCard(
+                                title    = stringResource(R.string.cpu_load_title, current?.base?.cpuPercent ?: 0),
+                                values   = cpuHistory.toList(),
+                                color    = Color(0xFF2196F3),
+                                maxValue = 100f,
+                                unit     = "%"
+                            )
+                        }
                     }
 
                     // ── RAM ──────────────────────────────────────────────────────
-                    AnimatedVisibility(visible = ramHistory.isNotEmpty()) {
+                    if (ramHistory.isNotEmpty()) {
                         val ramPct = current?.let {
                             if (it.base.ramTotalMb > 0) it.base.ramUsedMb * 100 / it.base.ramTotalMb else 0
                         } ?: 0
-                        ChartCard(
-                            title    = stringResource(
-                                R.string.ram_usage_title,
-                                current?.base?.ramUsedMb ?: 0,
-                                current?.base?.ramTotalMb ?: 0,
-                                ramPct
-                            ),
-                            values   = ramHistory.toList(),
-                            color    = Color(0xFF9C27B0),
-                            maxValue = 100f,
-                            unit     = "%"
-                        )
+                        Box(modifier = itemModifier) {
+                            ChartCard(
+                                title    = stringResource(
+                                    R.string.ram_usage_title,
+                                    current?.base?.ramUsedMb ?: 0,
+                                    current?.base?.ramTotalMb ?: 0,
+                                    ramPct
+                                ),
+                                values   = ramHistory.toList(),
+                                color    = Color(0xFF9C27B0),
+                                maxValue = 100f,
+                                unit     = "%"
+                            )
+                        }
                     }
 
                     // ── Température CPU ──────────────────────────────────────────
-                    AnimatedVisibility(visible = tempHistory.isNotEmpty()) {
-                        ChartCard(
-                            title    = stringResource(R.string.temp_title, current?.base?.tempCelsius ?: 0.0),
-                            values   = tempHistory.toList(),
-                            color    = Color(0xFFF44336),
-                            maxValue = 90f,
-                            unit     = "°C"
-                        )
+                    if (tempHistory.isNotEmpty()) {
+                        Box(modifier = itemModifier) {
+                            ChartCard(
+                                title    = stringResource(R.string.temp_title, current?.base?.tempCelsius ?: 0.0),
+                                values   = tempHistory.toList(),
+                                color    = Color(0xFFF44336),
+                                maxValue = 90f,
+                                unit     = "°C"
+                            )
+                        }
                     }
 
                     // ── Réseau ───────────────────────────────────────────────────
-                    NetworkCard(rxSpeed, txSpeed)
+                    Box(modifier = itemModifier) {
+                        NetworkCard(rxSpeed, txSpeed)
+                    }
 
                     // ── Disques ──────────────────────────────────────────────────
                     val disks = current?.disks
                     if (!disks.isNullOrEmpty()) {
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = itemModifier,
                             shape = RoundedCornerShape(24.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         ) {
@@ -614,7 +648,7 @@ fun MonitoringScreen(settings: SettingsManager, onOpenMenu: () -> Unit) {
                         stringResource(R.string.refresh_history_legend, intervalSec),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(bottom = 24.dp)
+                        modifier = Modifier.padding(bottom = 24.dp).fillMaxWidth()
                     )
                 }
             }

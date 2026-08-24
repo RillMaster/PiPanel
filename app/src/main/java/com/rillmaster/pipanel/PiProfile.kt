@@ -9,5 +9,12 @@ data class PiProfile(
     val port: Int = 22,
     val username: String = "pi",
     val password: String = "",
-    val piHolePassword: String = ""
-)
+    val piHolePassword: String = "",
+    /** Clé privée SSH (format PEM/OpenSSH). Vide = authentification par mot de passe. */
+    val privateKey: String = "",
+    /** Passphrase de la clé privée (si protégée). */
+    val keyPassphrase: String = ""
+) {
+    /** True si ce profil utilise une clé SSH plutôt qu'un mot de passe. */
+    val useSshKey: Boolean get() = privateKey.isNotBlank()
+}

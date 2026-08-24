@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- L'augmentation significative de l'inset (padding) empêche les coins de l'image carrée
+     d'entrer en collision avec le masque circulaire du système, ce qui causait la déformation. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/logo"
+    android:insetLeft="28dp"
+    android:insetTop="28dp"
+    android:insetRight="28dp"
+    android:insetBottom="28dp">
+</inset>

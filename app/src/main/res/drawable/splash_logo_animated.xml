@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/splash_logo_base">
+    <!-- Cible le carré -->
+    <target android:name="squircle" android:animation="@animator/anim_outline"/>
+    <!-- Cible la framboise -->
+    <target android:name="raspberry" android:animation="@animator/anim_outline"/>
+
+    <!-- Cibles des lobes -->
+    <target android:name="lobe1" android:animation="@animator/anim_lobe1"/>
+    <target android:name="lobe2" android:animation="@animator/anim_lobe2"/>
+    <target android:name="lobe3" android:animation="@animator/anim_lobe3"/>
+    <target android:name="lobe4" android:animation="@animator/anim_lobe4"/>
+    <target android:name="lobe5" android:animation="@animator/anim_lobe5"/>
+    <target android:name="lobe6" android:animation="@animator/anim_lobe6"/>
+    <target android:name="lobe7" android:animation="@animator/anim_lobe7"/>
+    <target android:name="lobe8" android:animation="@animator/anim_lobe8"/>
+    <target android:name="lobe9" android:animation="@animator/anim_lobe9"/>
+    <target android:name="lobe10" android:animation="@animator/anim_lobe10"/>
+    <target android:name="lobe11" android:animation="@animator/anim_lobe11"/>
+    <target android:name="lobe12" android:animation="@animator/anim_lobe12"/>
+    <target android:name="lobe13" android:animation="@animator/anim_lobe13"/>
+</animated-vector>

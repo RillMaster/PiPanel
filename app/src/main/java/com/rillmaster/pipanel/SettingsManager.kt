@@ -36,10 +36,13 @@ class SettingsManager(context: Context) {
                         piHolePassword = prefs.getString("pihole_password", "") ?: ""
                     )
                     val list = listOf(legacyProfile)
-                    val newJson = gson.toJson(list)
-                    prefs.edit { 
+                    val newJson = CryptoManager.encrypt(gson.toJson(list))
+                    prefs.edit {
                         putString("profiles_list", newJson)
                         putString("current_profile_id", legacyProfile.id)
+                        // Nettoie les anciennes clés en clair
+                        remove("password")
+                        remove("pihole_password")
                     }
                     return list
                 }
@@ -47,11 +50,13 @@ class SettingsManager(context: Context) {
             }
             return try {
                 val type = object : TypeToken<List<PiProfile>>() {}.type
-                gson.fromJson(json, type)
+                // Les profils sont stockés chiffrés ; decrypt() retourne les
+                // anciennes données en clair telles quelles pour la migration.
+                gson.fromJson(CryptoManager.decrypt(json), type)
             } catch (_: Exception) { emptyList() }
         }
         set(value) {
-            val json = gson.toJson(value)
+            val json = CryptoManager.encrypt(gson.toJson(value))
             prefs.edit { putString("profiles_list", json) }
         }
 
@@ -85,6 +90,20 @@ class SettingsManager(context: Context) {
     var piHolePassword: String
         get()      = getCurrentProfile()?.piHolePassword ?: prefs.getString("pihole_password", "") ?: ""
         set(value) = updateCurrentProfile { it.copy(piHolePassword = value) }
+
+    /** Clé privée SSH du profil courant (vide = auth par mot de passe). */
+    var privateKey: String
+        get()      = getCurrentProfile()?.privateKey ?: ""
+        set(value) = updateCurrentProfile { it.copy(privateKey = value) }
+
+    /** Passphrase de la clé privée du profil courant. */
+    var keyPassphrase: String
+        get()      = getCurrentProfile()?.keyPassphrase ?: ""
+        set(value) = updateCurrentProfile { it.copy(keyPassphrase = value) }
+
+    /** True si le profil courant s'authentifie par clé SSH. */
+    val useSshKey: Boolean
+        get() = privateKey.isNotBlank()
 
     private fun updateCurrentProfile(block: (PiProfile) -> PiProfile) {
         val current = getCurrentProfile()
@@ -251,6 +270,32 @@ class SettingsManager(context: Context) {
         get()      = prefs.getBoolean("docker_alerts_enabled", true)
         set(value) = prefs.edit { putBoolean("docker_alerts_enabled", value) }
 
+    // ── Disque ────────────────────────────────────────────────────────────────
+    /** Active les alertes d'espace disque sur la partition racine. */
+    var diskAlertsEnabled: Boolean
+        get()      = prefs.getBoolean("disk_alerts_enabled", true)
+        set(value) = prefs.edit { putBoolean("disk_alerts_enabled", value) }
+
+    /** Seuil d'utilisation disque en pourcentage (0-100) déclenchant une alerte. */
+    var diskThreshold: Int
+        get()      = prefs.getInt("disk_threshold", 85)
+        set(value) = prefs.edit { putInt("disk_threshold", value) }
+
+    // ── Services critiques ────────────────────────────────────────────────────
+    /** Active la surveillance des services systemd critiques. */
+    var serviceAlertsEnabled: Boolean
+        get()      = prefs.getBoolean("service_alerts_enabled", true)
+        set(value) = prefs.edit { putBoolean("service_alerts_enabled", value) }
+
+    /** Liste CSV des services systemd à surveiller (ex : "ssh,docker,pihole-FTL"). */
+    var criticalServices: String
+        get()      = prefs.getString("critical_services", "ssh,docker,pihole-FTL") ?: "ssh,docker,pihole-FTL"
+        set(value) = prefs.edit { putString("critical_services", value) }
+
+    /** Liste normalisée des services critiques (CSV → List, sans espaces vides). */
+    val criticalServicesList: List<String>
+        get() = criticalServices.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
     // ── Détection des services ────────────────────────────────────────────────
     fun isServiceInstalled(screen: Screen): Boolean {
         // Services are now profile-dependent? Probably should be.
@@ -272,5 +317,34 @@ class SettingsManager(context: Context) {
         set(value) {
             val profileId = currentProfileId ?: "default"
             prefs.edit { putLong("last_service_scan_$profileId", value) }
+        }
+
+    // ── Favoris gestionnaire de fichiers ─────────────────────────────────────
+    var fileManagerBookmarks: List<String>
+        get() {
+            val json = prefs.getString("file_manager_bookmarks", null)
+            return if (json == null) emptyList()
+            else try {
+                val type = object : TypeToken<List<String>>() {}.type
+                gson.fromJson(json, type)
+            } catch (_: Exception) { emptyList() }
+        }
+        set(value) = prefs.edit { putString("file_manager_bookmarks", gson.toJson(value)) }
+
+    // ── Planifications GPIO ───────────────────────────────────────────────────
+    var gpioSchedules: List<GpioSchedule>
+        get() {
+            val profileId = currentProfileId ?: "default"
+            val json = prefs.getString("gpio_schedules_$profileId", null)
+            return if (json == null) emptyList()
+            else try {
+                val type = object : TypeToken<List<GpioSchedule>>() {}.type
+                gson.fromJson(json, type)
+            } catch (_: Exception) { emptyList() }
+        }
+        set(value) {
+            val profileId = currentProfileId ?: "default"
+            val json = gson.toJson(value)
+            prefs.edit { putString("gpio_schedules_$profileId", json) }
         }
 }

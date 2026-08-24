@@ -51,13 +51,14 @@ enum class WeekDay(val shortRes: Int, val cronVal: String) {
 @Composable
 fun GpioScheduleScreen(
     settings: SettingsManager,
-    onOpenMenu: () -> Unit
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     val context           = androidx.compose.ui.platform.LocalContext.current
     val scope             = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var schedules    by remember { mutableStateOf(listOf<GpioSchedule>()) }
+    var schedules    by remember { mutableStateOf(settings.gpioSchedules) }
     val showAddDialog = remember { mutableStateOf(false) }
 
     Scaffold(
@@ -73,20 +74,33 @@ fun GpioScheduleScreen(
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 },
                 actions = {
                     IconButton(onClick = {
                         scope.launch {
                             try {
-                                SshClient.execute(
+                                val raw = SshClient.execute(
                                     settings.host, settings.port,
                                     settings.username, settings.password,
                                     "crontab -l", settings.sshTimeoutMs
                                 )
-                                snackbarHostState.showSnackbar(context.getString(R.string.sync_success))
+                                if (!raw.startsWith("[err]")) {
+                                    val synced = parseCrontab(raw)
+                                    if (synced.isNotEmpty()) {
+                                        schedules = synced
+                                        settings.gpioSchedules = synced
+                                        snackbarHostState.showSnackbar(context.getString(R.string.sync_success))
+                                    } else {
+                                        snackbarHostState.showSnackbar(context.getString(R.string.schedule_none))
+                                    }
+                                } else {
+                                    snackbarHostState.showSnackbar("❌ $raw")
+                                }
                             } catch (e: Exception) {
                                 snackbarHostState.showSnackbar("❌ ${e.message}")
                             }
@@ -147,10 +161,12 @@ fun GpioScheduleScreen(
                         schedule = schedule,
                         onToggle = { enabled ->
                             scope.launch {
-                                schedules = schedules.map {
+                                val updated = schedules.map {
                                     if (it.id == schedule.id) it.copy(enabled = enabled) else it
                                 }
-                                applyCrontab(settings, schedules.filter { it.enabled })
+                                schedules = updated
+                                settings.gpioSchedules = updated
+                                applyCrontab(settings, updated.filter { it.enabled })
                                 snackbarHostState.showSnackbar(
                                     if (enabled) context.getString(R.string.rule_enabled) else context.getString(R.string.rule_disabled)
                                 )
@@ -158,8 +174,10 @@ fun GpioScheduleScreen(
                         },
                         onDelete = {
                             scope.launch {
-                                schedules = schedules.filter { it.id != schedule.id }
-                                applyCrontab(settings, schedules.filter { it.enabled })
+                                val updated = schedules.filter { it.id != schedule.id }
+                                schedules = updated
+                                settings.gpioSchedules = updated
+                                applyCrontab(settings, updated.filter { it.enabled })
                                 snackbarHostState.showSnackbar(context.getString(R.string.rule_deleted))
                             }
                         }
@@ -176,9 +194,11 @@ fun GpioScheduleScreen(
             onConfirm = { newSchedule ->
                 showAddDialog.value = false
                 scope.launch {
-                    schedules = schedules + newSchedule
+                    val updated = schedules + newSchedule
+                    schedules = updated
+                    settings.gpioSchedules = updated
                     try {
-                        applyCrontab(settings, schedules.filter { it.enabled })
+                        applyCrontab(settings, updated.filter { it.enabled })
                         snackbarHostState.showSnackbar(context.getString(R.string.rule_added))
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar(context.getString(R.string.error_crontab_prefix, e.message ?: ""))
@@ -383,12 +403,48 @@ private suspend fun applyCrontab(settings: SettingsManager, enabledSchedules: Li
                     "GPIO.setmode(GPIO.BCM);" +
                     "GPIO.setup(${s.pin},GPIO.OUT);" +
                     "GPIO.output(${s.pin},${s.action.gpioValue})\\\""
-        "${s.minute} ${s.hour} * * $daysPart $gpioCmd  # PiPanel"
+        "${s.minute} ${s.hour} * * $daysPart $gpioCmd  # PiPanel:${s.label.replace(":", "_")}:${s.pin}"
     }
-    val cmd = "(crontab -l 2>/dev/null | grep -v '# PiPanel'; printf '$lines') | crontab -"
+    val cmd = "(crontab -l 2>/dev/null | grep -v '# PiPanel'; printf \"$lines\\n\") | crontab -"
     SshClient.execute(
         settings.host, settings.port,
         settings.username, settings.password,
         cmd, settings.sshTimeoutMs
     )
+}
+
+private fun parseCrontab(raw: String): List<GpioSchedule> {
+    val list = mutableListOf<GpioSchedule>()
+    raw.lines().forEach { line ->
+        if (line.contains("# PiPanel")) {
+            val parts = line.trim().split(Regex("\\s+"))
+            if (parts.size >= 6) {
+                val minute = parts[0].toIntOrNull() ?: 0
+                val hour = parts[1].toIntOrNull() ?: 0
+                val daysPart = parts[4]
+                val days = if (daysPart == "*") emptySet() else daysPart.split(",").mapNotNull { cv ->
+                    WeekDay.entries.find { it.cronVal == cv }
+                }.toSet()
+
+                // Extract info from comment
+                val commentPart = line.substringAfter("# PiPanel").trim()
+                val commentParts = commentPart.split(":")
+                val label = commentParts.getOrNull(1)?.replace("_", " ") ?: "GPIO Task"
+                val pin = commentParts.getOrNull(2)?.toIntOrNull() ?: 17
+
+                // Determine action from command
+                val action = if (line.contains(",1)")) PinAction.ON else PinAction.OFF
+
+                list.add(GpioSchedule(
+                    label = label,
+                    pin = pin,
+                    action = action,
+                    hour = hour,
+                    minute = minute,
+                    days = days
+                ))
+            }
+        }
+    }
+    return list
 }

@@ -41,6 +41,7 @@ fun PwmSliderScreen(
     settings: SettingsManager,
     onClose : () -> Unit,
     onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     val context           = androidx.compose.ui.platform.LocalContext.current
     val scope             = rememberCoroutineScope()
@@ -67,8 +68,10 @@ fun PwmSliderScreen(
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

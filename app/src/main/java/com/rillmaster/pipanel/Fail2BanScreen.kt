@@ -22,8 +22,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun Fail2BanScreen(
     settings: SettingsManager,
-    onClose: () -> Unit,
-    onOpenMenu: () -> Unit
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     val context = LocalContext.current
     var jails by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -42,7 +42,8 @@ fun Fail2BanScreen(
                 SshClient.execute(
                     settings.host, settings.port, settings.username, settings.password,
                     "sudo fail2ban-client status",
-                    settings.sshTimeoutMs
+                    settings.sshTimeoutMs,
+                    privateKey = settings.privateKey, keyPassphrase = settings.keyPassphrase
                 )
             }
             
@@ -61,7 +62,8 @@ fun Fail2BanScreen(
                     SshClient.execute(
                         settings.host, settings.port, settings.username, settings.password,
                         "sudo fail2ban-client status $currentJail",
-                        settings.sshTimeoutMs
+                        settings.sshTimeoutMs,
+                        privateKey = settings.privateKey, keyPassphrase = settings.keyPassphrase
                     )
                 }
                 // Parsing plus flexible pour la liste d'IPs
@@ -104,7 +106,8 @@ fun Fail2BanScreen(
                     SshClient.execute(
                         settings.host, settings.port, settings.username, settings.password,
                         "sudo fail2ban-client set $jail unbanip $ip",
-                        settings.sshTimeoutMs
+                        settings.sshTimeoutMs,
+                        privateKey = settings.privateKey, keyPassphrase = settings.keyPassphrase
                     )
                 }
                 refreshData()
@@ -121,7 +124,8 @@ fun Fail2BanScreen(
                     SshClient.execute(
                         settings.host, settings.port, settings.username, settings.password,
                         "sudo fail2ban-client set $jail banip $ip",
-                        settings.sshTimeoutMs
+                        settings.sshTimeoutMs,
+                        privateKey = settings.privateKey, keyPassphrase = settings.keyPassphrase
                     )
                 }
                 if (selectedJail == null) selectedJail = jail
@@ -143,8 +147,10 @@ fun Fail2BanScreen(
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = null)
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = null)
+                        }
                     }
                 },
                 actions = {

@@ -1,6 +1,9 @@
 package com.rillmaster.pipanel
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +20,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.DevicesOther
 import androidx.compose.material.icons.filled.Laptop
@@ -26,8 +31,11 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Router
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.SortByAlpha
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -36,7 +44,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -50,13 +63,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class NetworkDevice(
@@ -66,45 +83,13 @@ data class NetworkDevice(
     val vendor: String
 )
 
-// Détecte le subnet via eth0, lance nmap -sn dessus
-// Fonctionne sans sudo, sans Python, sans escaping complexe
-// Script Python pour scanner le réseau local de manière robuste
-// Retourne: ip|host|mac|vendor
-private val SCAN_PYTHON_SCRIPT = """
-import subprocess, re, base64
+private enum class SortMode { BY_IP, BY_NAME }
 
-def run(cmd):
-    try: return subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.STDOUT)
-    except: return ''
-
-# Récupère tous les CIDR IPv4 locaux (ex: 192.168.1.0/24)
-subnets = re.findall(r'inet\s+(\d+\.\d+\.\d+\.\d+/\d+)', run('ip -4 addr show'))
-subnets = [s for s in subnets if not s.startswith('127.')]
-
-for sn in subnets:
-    # Scan nmap (on essaie sans sudo car souvent suffisant pour -sn)
-    out = run('nmap -sn ' + sn + ' 2>/dev/null')
-    
-    # Découpage par rapport
-    for block in re.split(r'Nmap scan report for ', out)[1:]:
-        lines = block.split('\n')
-        header = lines[0].strip()
-        
-        # Format: "hostname (192.168.1.46)" ou juste "192.168.1.85"
-        m = re.search(r'(.*?) \((.*?)\)', header)
-        if m:
-            host, ip = m.group(1), m.group(2)
-        else:
-            host, ip = '', header
-            
-        mac, vendor = '', ''
-        for line in lines:
-            if 'MAC Address:' in line:
-                m_mac = re.search(r'MAC Address: ([0-9A-F:]{17})(?: \((.+?)\))?', line, re.I)
-                if m_mac:
-                    mac, vendor = m_mac.group(1), m_mac.group(2) or ''
-        
-        print(f"{ip}|{host}|{mac}|{vendor}")
+private fun buildScanCommand(): String = """
+subnets=${'$'}(ip -4 -o addr show scope global | awk '{print ${'$'}4}')
+for sn in ${'$'}subnets; do
+  sudo -n nmap -sn "${'$'}sn" 2>/dev/null || nmap -sn "${'$'}sn" 2>/dev/null
+done
 """.trimIndent()
 
 private val REPORT_REGEX =
@@ -117,12 +102,16 @@ fun parseNmapOutput(output: String): List<NetworkDevice> {
     var currentIp = ""
     var currentHostname = ""
 
+    fun flush() {
+        if (currentIp.isNotEmpty()) {
+            devices.add(NetworkDevice(ip = currentIp, hostname = currentHostname, mac = "", vendor = ""))
+        }
+    }
+
     output.lines().forEach { line ->
         val reportMatch = REPORT_REGEX.find(line)
         if (reportMatch != null) {
-            if (currentIp.isNotEmpty() && (devices.isEmpty() || devices.last().ip != currentIp)) {
-                devices.add(NetworkDevice(ip = currentIp, hostname = currentHostname, mac = "", vendor = ""))
-            }
+            flush()
             val hostnameRaw = reportMatch.groupValues[1]
             val ipFromHostname = reportMatch.groupValues[2]
             val ipDirect = reportMatch.groupValues[3]
@@ -138,31 +127,70 @@ fun parseNmapOutput(output: String): List<NetworkDevice> {
             devices.add(NetworkDevice(ip = currentIp, hostname = currentHostname, mac = mac, vendor = vendor))
             currentIp = ""
             currentHostname = ""
-            return@forEach
         }
     }
-    if (currentIp.isNotEmpty() && (devices.isEmpty() || devices.last().ip != currentIp)) {
-        devices.add(NetworkDevice(ip = currentIp, hostname = currentHostname, mac = "", vendor = ""))
-    }
-    return devices
+    flush()
+
+    // Un même hôte peut apparaître deux fois si plusieurs sous-réseaux se chevauchent
+    return devices.distinctBy { it.ip }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+private fun isGatewayIp(ip: String): Boolean = ip.endsWith(".1") || ip.endsWith(".254")
+
+private fun sortDevices(devices: List<NetworkDevice>, mode: SortMode): List<NetworkDevice> {
+    // La passerelle reste toujours en tête, quel que soit le tri choisi
+    val (gateway, rest) = devices.partition { isGatewayIp(it.ip) }
+    val sortedRest = when (mode) {
+        SortMode.BY_IP -> rest.sortedBy { dev ->
+            dev.ip.split(".").mapNotNull { it.toIntOrNull() }
+                .fold(0L) { acc, part -> acc * 256 + part }
+        }
+        SortMode.BY_NAME -> rest.sortedBy { it.hostname.ifBlank { it.ip }.lowercase() }
+    }
+    return gateway.sortedBy { it.ip } + sortedRest
+}
+
+private fun formatElapsedSince(timestampMs: Long): String {
+    val diff = (System.currentTimeMillis() - timestampMs) / 1000
+    return when {
+        diff < 5 -> "à l'instant"
+        diff < 60 -> "il y a ${diff}s"
+        diff < 3600 -> "il y a ${diff / 60}min"
+        else -> "il y a ${diff / 3600}h"
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun NetworkScannerScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: () -> Unit) {
+fun NetworkScannerScreen(
+    settings: SettingsManager,
+    onClose: () -> Unit,
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
+) {
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
     var devices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var nmapInstalled by remember { mutableStateOf(true) }
     var installingNmap by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    var lastScanAt by remember { mutableStateOf<Long?>(null) }
+    var lastScanDurationMs by remember { mutableStateOf<Long?>(null) }
+
+    var searchQuery by remember { mutableStateOf("") }
+    var showSearch by remember { mutableStateOf(false) }
+    var sortMode by remember { mutableStateOf(SortMode.BY_IP) }
+    var autoRefresh by remember { mutableStateOf(false) }
 
     fun checkNmapAndScan() {
         scope.launch {
             loading = true
             errorMessage = ""
+            val startedAt = System.currentTimeMillis()
 
-            // Vérifie la présence de nmap
             val check = SshClient.execute(
                 settings.host, settings.port, settings.username, settings.password,
                 "which nmap"
@@ -174,48 +202,23 @@ fun NetworkScannerScreen(settings: SettingsManager, onClose: () -> Unit, onOpenM
             }
             nmapInstalled = true
 
-            // Encode le script en Base64 pour l'envoyer proprement
-            val b64Script = android.util.Base64.encodeToString(
-                SCAN_PYTHON_SCRIPT.toByteArray(),
-                android.util.Base64.NO_WRAP
-            )
-            
             val raw = SshClient.execute(
                 settings.host, settings.port, settings.username, settings.password,
-                "echo '$b64Script' | base64 -d | python3",
-                30000
+                buildScanCommand(),
+                45000
             )
 
             if (raw.isBlank() || raw.startsWith("[err]")) {
-                // Si erreur, on tente un scan nmap direct très simple sans Python
-                val simpleScan = SshClient.execute(
-                    settings.host, settings.port, settings.username, settings.password,
-                    "nmap -sn 192.168.1.0/24", // Fallback sur un range commun
-                    30000
-                )
-                if (simpleScan.isNotBlank() && !simpleScan.startsWith("[err]")) {
-                    devices = parseNmapOutput(simpleScan)
-                } else {
-                    errorMessage = raw.ifBlank { "Empty response from Pi" }
-                    devices = emptyList()
-                }
+                errorMessage = raw.ifBlank { "Aucune réponse du Raspberry Pi" }
+                devices = emptyList()
             } else {
-                val list = mutableListOf<NetworkDevice>()
-                raw.lines().forEach { line ->
-                    val parts = line.split("|")
-                    if (parts.size >= 4) {
-                        list.add(NetworkDevice(
-                            ip = parts[0],
-                            hostname = parts[1].removeSuffix(".home").removeSuffix(".local"),
-                            mac = parts[2],
-                            vendor = parts[3]
-                        ))
-                    }
+                devices = parseNmapOutput(raw)
+                if (devices.isEmpty() && raw.isNotBlank()) {
+                    errorMessage = ""
                 }
-                devices = list.sortedWith(compareBy {
-                    it.ip.split(".").last().toIntOrNull() ?: 0
-                })
             }
+            lastScanAt = System.currentTimeMillis()
+            lastScanDurationMs = lastScanAt!! - startedAt
             loading = false
         }
     }
@@ -236,38 +239,108 @@ fun NetworkScannerScreen(settings: SettingsManager, onClose: () -> Unit, onOpenM
         checkNmapAndScan()
     }
 
+    LaunchedEffect(autoRefresh) {
+        while (autoRefresh) {
+            delay(30_000)
+            if (!loading) checkNmapAndScan()
+        }
+    }
+
+    val filteredDevices = remember(devices, searchQuery, sortMode) {
+        val base = if (searchQuery.isBlank()) {
+            devices
+        } else {
+            val q = searchQuery.trim().lowercase()
+            devices.filter {
+                it.ip.contains(q) || it.hostname.lowercase().contains(q) ||
+                        it.mac.lowercase().contains(q) || it.vendor.lowercase().contains(q)
+            }
+        }
+        sortDevices(base, sortMode)
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) { data ->
+            Snackbar(snackbarData = data)
+        } },
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(stringResource(R.string.net_scan_title), fontWeight = FontWeight.Bold)
-                        if (devices.isNotEmpty() && !loading) {
-                            Text(
-                                "${devices.size} ${stringResource(R.string.net_scan_devices_found)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
+            Column {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(stringResource(R.string.net_scan_title), fontWeight = FontWeight.Bold)
+                            if (!loading) {
+                                val subtitle = buildString {
+                                    append("${filteredDevices.size}")
+                                    append(if (filteredDevices.size != devices.size) "/${devices.size}" else "")
+                                    append(" ${stringResource(R.string.net_scan_devices_found)}")
+                                    lastScanAt?.let { append(" • ${formatElapsedSince(it)}") }
+                                }
+                                Text(
+                                    subtitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        if (showNavigationIcon) {
+                            IconButton(onClick = onOpenMenu) {
+                                Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                            }
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { showSearch = !showSearch }) {
+                            Icon(
+                                if (showSearch) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = "Rechercher"
                             )
                         }
+                        IconButton(onClick = {
+                            sortMode = if (sortMode == SortMode.BY_IP) SortMode.BY_NAME else SortMode.BY_IP
+                        }) {
+                            Icon(Icons.Default.SortByAlpha, contentDescription = "Trier")
+                        }
+                        IconButton(onClick = { autoRefresh = !autoRefresh }) {
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = "Actualisation auto",
+                                tint = if (autoRefresh) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { checkNmapAndScan() }, enabled = !loading && nmapInstalled) {
+                            if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                            else Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))
+                        }
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { checkNmapAndScan() }, enabled = !loading && nmapInstalled) {
-                        if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                        else Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))
-                    }
+                )
+                AnimatedVisibility(visible = showSearch) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = { Text("IP, nom, MAC, fabricant…") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = null)
+                                }
+                            }
+                        }
+                    )
                 }
-            )
+            }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
-                // nmap non installé
                 !nmapInstalled -> {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -280,10 +353,7 @@ fun NetworkScannerScreen(settings: SettingsManager, onClose: () -> Unit, onOpenM
                             tint = MaterialTheme.colorScheme.outline
                         )
                         Spacer(Modifier.height(16.dp))
-                        Text(
-                            stringResource(R.string.net_scan_nmap_not_found),
-                            textAlign = TextAlign.Center
-                        )
+                        Text(stringResource(R.string.net_scan_nmap_not_found), textAlign = TextAlign.Center)
                         Spacer(Modifier.height(24.dp))
                         Button(onClick = { installNmap() }, enabled = !installingNmap) {
                             if (installingNmap) {
@@ -297,7 +367,6 @@ fun NetworkScannerScreen(settings: SettingsManager, onClose: () -> Unit, onOpenM
                     }
                 }
 
-                // Chargement initial
                 loading && devices.isEmpty() -> {
                     Column(
                         modifier = Modifier.fillMaxSize(),
@@ -310,7 +379,6 @@ fun NetworkScannerScreen(settings: SettingsManager, onClose: () -> Unit, onOpenM
                     }
                 }
 
-                // Erreur SSH
                 errorMessage.isNotEmpty() && devices.isEmpty() -> {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -330,10 +398,11 @@ fun NetworkScannerScreen(settings: SettingsManager, onClose: () -> Unit, onOpenM
                             fontFamily = FontFamily.Monospace,
                             style = MaterialTheme.typography.bodySmall
                         )
+                        Spacer(Modifier.height(16.dp))
+                        Button(onClick = { checkNmapAndScan() }) { Text(stringResource(R.string.action_refresh)) }
                     }
                 }
 
-                // Aucun appareil trouvé
                 devices.isEmpty() -> {
                     Column(
                         modifier = Modifier.fillMaxSize(),
@@ -350,15 +419,39 @@ fun NetworkScannerScreen(settings: SettingsManager, onClose: () -> Unit, onOpenM
                     }
                 }
 
-                // Liste des appareils
+                filteredDevices.isEmpty() -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.SearchOff, null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text("Aucun appareil ne correspond à « $searchQuery »")
+                    }
+                }
+
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(devices) { device ->
-                            DeviceCard(device)
+                        items(filteredDevices, key = { it.ip }) { device ->
+                            DeviceCard(
+                                device = device,
+                                isGateway = isGatewayIp(device.ip),
+                                onCopyIp = {
+                                    clipboard.setText(AnnotatedString(device.ip))
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Adresse IP copiée : ${device.ip}")
+                                    }
+                                }
+                            )
                         }
                     }
                 }
@@ -367,11 +460,18 @@ fun NetworkScannerScreen(settings: SettingsManager, onClose: () -> Unit, onOpenM
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun DeviceCard(device: NetworkDevice) {
+fun DeviceCard(
+    device: NetworkDevice,
+    isGateway: Boolean = false,
+    onCopyIp: () -> Unit = {}
+) {
     val hostname = device.hostname.ifBlank { stringResource(R.string.net_scan_unknown_host) }
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = {}, onLongClick = onCopyIp),
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
@@ -382,11 +482,16 @@ fun DeviceCard(device: NetworkDevice) {
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .background(
+                        if (isGateway) MaterialTheme.colorScheme.tertiaryContainer
+                        else MaterialTheme.colorScheme.primaryContainer
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = when {
+                        isGateway -> Icons.Default.Router
+
                         hostname.contains("phone", ignoreCase = true) ||
                                 hostname.contains("android", ignoreCase = true) ||
                                 hostname.contains("s24", ignoreCase = true) ||
@@ -403,24 +508,30 @@ fun DeviceCard(device: NetworkDevice) {
 
                         device.vendor.contains("Apple", ignoreCase = true) -> Icons.Default.LaptopMac
 
-                        // IP de gateway (.254 ou .1)
-                        device.ip.endsWith(".254") || device.ip.endsWith(".1") -> Icons.Default.Router
-
                         else -> Icons.Default.Devices
                     },
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = if (isGateway) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
                 )
             }
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = hostname,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = hostname,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (isGateway) {
+                        Spacer(Modifier.width(6.dp))
+                        Badge(containerColor = MaterialTheme.colorScheme.tertiary) {
+                            Text("Passerelle", color = Color.White, fontSize = 9.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                        }
+                    }
+                }
                 Text(
                     text = device.ip,
                     style = MaterialTheme.typography.bodyMedium,

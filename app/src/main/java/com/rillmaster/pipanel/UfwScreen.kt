@@ -22,8 +22,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun UfwScreen(
     settings: SettingsManager,
-    onClose: () -> Unit,
-    onOpenMenu: () -> Unit
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     var rules by remember { mutableStateOf<List<UfwRule>>(emptyList()) }
     var status by remember { mutableStateOf("Unknown") }
@@ -127,8 +127,10 @@ fun UfwScreen(
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = null)
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = null)
+                        }
                     }
                 },
                 actions = {

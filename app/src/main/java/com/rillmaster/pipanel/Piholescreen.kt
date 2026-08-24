@@ -204,7 +204,8 @@ fun PiHoleScreen(
     settings     : SettingsManager,
     onClose      : () -> Unit,
     onOpenConfig : () -> Unit,
-    onOpenMenu   : () -> Unit
+    onOpenMenu   : () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
@@ -347,8 +348,10 @@ fun PiHoleScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 },
                 actions = {
@@ -491,39 +494,47 @@ private fun PiHoleToggleCard(enabled: Boolean, toggling: Boolean, onToggle: () -
     Card(modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = bgColor),
         border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)) {
-        Row(modifier = Modifier.padding(20.dp).fillMaxWidth(),
+        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
-                    initialValue = 0.6f, targetValue = 1f,
-                    animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "alpha")
-                Box(modifier = Modifier.size(14.dp).clip(CircleShape).background(
-                    (if (enabled) PiHoleGreen else PiHoleRed).copy(alpha = if (enabled) pulse else 1f)))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        if (enabled) stringResource(R.string.pihole_status_active) else stringResource(R.string.pihole_status_inactive),
-                        fontWeight = FontWeight.Bold, 
-                        fontSize = 16.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        if (enabled) stringResource(R.string.pihole_filtering_active) else stringResource(R.string.pihole_filtering_inactive),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            
+            val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+                initialValue = 0.6f, targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "alpha")
+            
+            Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(
+                (if (enabled) PiHoleGreen else PiHoleRed).copy(alpha = if (enabled) pulse else 1f)))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (enabled) stringResource(R.string.pihole_status_active) else stringResource(R.string.pihole_status_inactive),
+                    fontWeight = FontWeight.Bold, 
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    if (enabled) stringResource(R.string.pihole_filtering_active) else stringResource(R.string.pihole_filtering_inactive),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
+
             if (toggling) {
-                CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
             } else {
-                Switch(checked = enabled, onCheckedChange = { onToggle() },
+                Switch(
+                    checked = enabled, 
+                    onCheckedChange = { onToggle() },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor   = Color.White, checkedTrackColor   = PiHoleGreen,
-                        uncheckedThumbColor = Color.White, uncheckedTrackColor = PiHoleRed.copy(0.4f)))
+                        checkedThumbColor   = Color.White, 
+                        checkedTrackColor   = PiHoleGreen,
+                        uncheckedThumbColor = Color.White, 
+                        uncheckedTrackColor = PiHoleRed.copy(0.4f)
+                    )
+                )
             }
         }
     }

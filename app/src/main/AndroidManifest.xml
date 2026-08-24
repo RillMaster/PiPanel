@@ -37,7 +37,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.PiPanel"
+            android:theme="@style/Theme.PiPanel.Starting"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
             <intent-filter>
@@ -45,13 +45,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!-- Service ajouté -->
-        <service
-            android:name=".MonitoringService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".WidgetUpdateService"
@@ -109,6 +102,32 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/sensor_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".CpuTempWidgetReceiver"
+            android:exported="true"
+            android:label="Température CPU"
+            android:icon="@drawable/ic_widget_stats">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/cpu_temp_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".DockerWidgetReceiver"
+            android:exported="true"
+            android:label="Docker"
+            android:icon="@drawable/docker">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/docker_widget_info" />
         </receiver>
 
     </application>

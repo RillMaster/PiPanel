@@ -1,3 +1,4 @@
+@file:Suppress("SpellCheckingInspection")
 package com.rillmaster.pipanel
 
 import android.content.Intent
@@ -13,6 +14,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +28,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -486,6 +490,8 @@ private fun SshConfigStep(
     onBack: () -> Unit,
     onNext: () -> Unit
 ) {
+    var passwordVisible by remember { mutableStateOf(false) }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         StepHeader(step = stringResource(R.string.onboarding_step_2_4), title = stringResource(R.string.onboarding_ssh_title))
 
@@ -521,7 +527,15 @@ private fun SshConfigStep(
             value                = password,
             onValueChange        = onPasswordChange,
             label                = { Text(stringResource(R.string.onboarding_ssh_pass_label)) },
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(
+                        imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (passwordVisible) stringResource(R.string.action_hide) else stringResource(R.string.action_show)
+                    )
+                }
+            },
             modifier             = Modifier.fillMaxWidth(),
             singleLine           = true
         )

@@ -1,3 +1,4 @@
+@file:Suppress("SpellCheckingInspection")
 package com.rillmaster.pipanel
 
 import androidx.compose.foundation.clickable
@@ -6,6 +7,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -20,7 +25,8 @@ import androidx.compose.ui.unit.dp
 fun ProfilesScreen(
     settings: SettingsManager,
     onClose: () -> Unit,
-    onOpenMenu: () -> Unit
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     var profiles by remember { mutableStateOf(settings.profiles) }
     var currentId by remember { mutableStateOf(settings.currentProfileId) }
@@ -32,8 +38,10 @@ fun ProfilesScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.nav_profiles)) },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 },
                 actions = {
@@ -176,6 +184,7 @@ fun ProfileEditDialog(
     var port by remember { mutableStateOf(initialProfile?.port?.toString() ?: "22") }
     var username by remember { mutableStateOf(initialProfile?.username ?: "pi") }
     var password by remember { mutableStateOf(initialProfile?.password ?: "") }
+    var passwordVisible by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -186,7 +195,21 @@ fun ProfileEditDialog(
                 OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text(stringResource(R.string.settings_ip_label)) }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = port, onValueChange = { port = it }, label = { Text(stringResource(R.string.settings_port_label)) }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text(stringResource(R.string.settings_user_label)) }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text(stringResource(R.string.settings_pass_label)) }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text(stringResource(R.string.settings_pass_label)) },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (passwordVisible) stringResource(R.string.action_hide) else stringResource(R.string.action_show)
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {

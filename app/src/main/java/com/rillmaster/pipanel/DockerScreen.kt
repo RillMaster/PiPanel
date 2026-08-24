@@ -61,7 +61,9 @@ suspend fun fetchDockerContainersWithStats(settings: SettingsManager): Result<Li
         user      = settings.username,
         password  = settings.password,
         command   = "sudo docker ps -a --format \"{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\"",
-        timeoutMs = settings.sshTimeoutMs
+        timeoutMs = settings.sshTimeoutMs,
+        privateKey = settings.privateKey,
+        keyPassphrase = settings.keyPassphrase
     )
     if (rawList.startsWith("[err]") || rawList.isBlank()) return Result.failure(Exception(rawList))
 
@@ -72,7 +74,9 @@ suspend fun fetchDockerContainersWithStats(settings: SettingsManager): Result<Li
         user      = settings.username,
         password  = settings.password,
         command   = "sudo docker stats --no-stream --format \"{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\"",
-        timeoutMs = settings.sshTimeoutMs
+        timeoutMs = settings.sshTimeoutMs,
+        privateKey = settings.privateKey,
+        keyPassphrase = settings.keyPassphrase
     )
     
     val statsMap = rawStats.lines().associate { line ->
@@ -112,7 +116,8 @@ suspend fun fetchDockerContainersWithStats(settings: SettingsManager): Result<Li
 fun DockerScreen(
     settings: SettingsManager,
     onClose : () -> Unit,
-    onOpenMenu: () -> Unit
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     val scope  = rememberCoroutineScope()
 
@@ -158,7 +163,8 @@ fun DockerScreen(
             }
             val raw = SshClient.execute(
                 settings.host, settings.port, settings.username, settings.password,
-                cmd, settings.sshTimeoutMs
+                cmd, settings.sshTimeoutMs,
+                privateKey = settings.privateKey, keyPassphrase = settings.keyPassphrase
             )
             val emoji = when (action) {
                 "start"   -> "▶️"
@@ -184,8 +190,10 @@ fun DockerScreen(
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 },
                 actions = {
@@ -445,7 +453,8 @@ fun LogsDialog(
             val raw = SshClient.execute(
                 settings.host, settings.port, settings.username, settings.password,
                 "sudo docker logs --tail 100 ${container.name}",
-                settings.sshTimeoutMs
+                settings.sshTimeoutMs,
+                privateKey = settings.privateKey, keyPassphrase = settings.keyPassphrase
             )
             logs = raw.ifBlank { "Aucun log disponible." }
         }

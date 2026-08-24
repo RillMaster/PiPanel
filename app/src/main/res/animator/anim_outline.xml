@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 1. Dessin des contours (1500ms -> 2500ms) -->
+    <objectAnimator
+        android:propertyName="trimPathEnd"
+        android:duration="1000"
+        android:startOffset="1500"
+        android:valueFrom="0"
+        android:valueTo="1"
+        android:valueType="floatType"
+        android:interpolator="@android:interpolator/fast_out_slow_in"/>
+
+    <!-- 2. Remplissage par fondu (Fade-in) à 3150ms -->
+    <objectAnimator
+        android:propertyName="fillAlpha"
+        android:duration="350"
+        android:startOffset="3150"
+        android:valueFrom="0"
+        android:valueTo="1"
+        android:valueType="floatType"
+        android:interpolator="@android:interpolator/decelerate_cubic"/>
+</set>

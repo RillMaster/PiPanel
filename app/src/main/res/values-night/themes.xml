@@ -5,4 +5,12 @@
         <item name="android:textColor">@color/text_dark</item>
         <item name="android:statusBarColor">@color/background_dark</item>
     </style>
+
+    <style name="Theme.PiPanel.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#000000</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo_animated</item>
+        <item name="windowSplashScreenAnimationDuration">2000</item>
+        <item name="windowSplashScreenIconBackgroundColor">#000000</item>
+        <item name="postSplashScreenTheme">@style/Theme.PiPanel</item>
+    </style>
 </resources>

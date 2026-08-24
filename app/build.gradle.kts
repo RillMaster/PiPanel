@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 @Suppress("DEPRECATION")
@@ -49,6 +50,7 @@ kotlin {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlin.reflect)
@@ -70,6 +72,8 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.calvin.reorderable)
+    implementation(libs.vico.compose)
+    implementation(libs.vico.compose.m3)
     implementation(libs.squareup.retrofit)
     implementation(libs.squareup.retrofit.gson)
     implementation(libs.kotlinx.coroutines.android)
@@ -80,6 +84,13 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.9")
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.glance.material3)
+    implementation("androidx.documentfile:documentfile:1.1.0")
+    implementation(libs.guava)
     
     implementation(libs.androidx.datastore.preferences)
+
+    // Room (métriques locales)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 }

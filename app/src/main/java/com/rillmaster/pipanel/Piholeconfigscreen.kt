@@ -171,7 +171,8 @@ fun PiHoleConfigScreen(
                     IconButton(onClick = { showPassword = !showPassword }) {
                         Icon(
                             imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (showPassword) "Masquer" else "Afficher")
+                            contentDescription = if (showPassword) stringResource(R.string.action_hide) else stringResource(R.string.action_show)
+                        )
                     }
                 },
                 visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),

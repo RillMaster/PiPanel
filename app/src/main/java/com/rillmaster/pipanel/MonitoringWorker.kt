@@ -14,6 +14,8 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.rillmaster.pipanel.data.db.AppDatabase
+import com.rillmaster.pipanel.data.db.MetricEntity
 import java.util.concurrent.TimeUnit
 
 
@@ -46,11 +48,22 @@ class MonitoringWorker(
         } else {
             clearCooldown("pi_unreachable")
             checkCpuRam(stats)
+            persistMetrics(stats)
         }
 
         // ── Docker ────────────────────────────────────────────────────────────
         if (settings.dockerAlertsEnabled) {
             runCatching { checkDockerContainers() }
+        }
+
+        // ── Espace disque ───────────────────────────────────────────────────────
+        if (settings.diskAlertsEnabled) {
+            runCatching { checkDiskUsage() }
+        }
+
+        // ── Services critiques ──────────────────────────────────────────────────
+        if (settings.serviceAlertsEnabled) {
+            runCatching { checkCriticalServices() }
         }
 
         return Result.success()
@@ -133,6 +146,80 @@ class MonitoringWorker(
             currentStates.forEach { (name, running) ->
                 putBoolean("docker_state_$name", running)
             }
+        }
+    }
+
+    // ── Disque ────────────────────────────────────────────────────────────────
+
+    private suspend fun checkDiskUsage() {
+        val output = SshClient.execute(
+            host      = settings.host,
+            port      = settings.port,
+            user      = settings.username,
+            password  = settings.password,
+            command   = "df / --output=pcent | tail -1",
+            timeoutMs = settings.sshTimeoutMs,
+            context   = ctx
+        )
+        val usedPct = output.trim().removeSuffix("%").toIntOrNull() ?: return
+
+        if (usedPct >= settings.diskThreshold) {
+            sendAlertOnce(
+                key       = "disk_high",
+                channelId = NotificationHelper.CHANNEL_SYSTEM,
+                title     = ctx.getString(R.string.notif_disk_high_title, usedPct),
+                message   = ctx.getString(R.string.notif_disk_high_msg, settings.diskThreshold, usedPct)
+            )
+        }
+    }
+
+    // ── Services critiques ──────────────────────────────────────────────────────
+
+    private suspend fun checkCriticalServices() {
+        settings.criticalServicesList.forEach { service ->
+            // Protection basique contre l'injection de commande
+            if (!service.matches(Regex("[A-Za-z0-9_.@-]+"))) return@forEach
+
+            val status = runCatching {
+                SshClient.execute(
+                    host      = settings.host,
+                    port      = settings.port,
+                    user      = settings.username,
+                    password  = settings.password,
+                    command   = "systemctl is-active $service",
+                    timeoutMs = settings.sshTimeoutMs,
+                    context   = ctx
+                ).trim()
+            }.getOrDefault("unknown")
+
+            if (status != "active") {
+                sendAlertOnce(
+                    key       = "service_$service",
+                    channelId = NotificationHelper.CHANNEL_SERVICES,
+                    title     = ctx.getString(R.string.notif_service_down_title),
+                    message   = ctx.getString(R.string.notif_service_down_msg, service, status)
+                )
+            } else {
+                clearCooldown("service_$service")
+            }
+        }
+    }
+
+    // ── Persistance Room ────────────────────────────────────────────────────────
+
+    private suspend fun persistMetrics(stats: SystemStats) {
+        runCatching {
+            val dao = AppDatabase.getInstance(ctx).metricDao()
+            dao.insert(
+                MetricEntity(
+                    timestamp   = System.currentTimeMillis(),
+                    tempCelsius = stats.tempCelsius,
+                    cpuPercent  = stats.cpuPercent,
+                    ramUsedMb   = stats.ramUsedMb,
+                    ramTotalMb  = stats.ramTotalMb
+                )
+            )
+            dao.pruneOlderThan(System.currentTimeMillis() - AppDatabase.RETENTION_MS)
         }
     }
 

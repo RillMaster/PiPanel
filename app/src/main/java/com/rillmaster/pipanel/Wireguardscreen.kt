@@ -1,3 +1,4 @@
+@file:Suppress("SpellCheckingInspection")
 package com.rillmaster.pipanel
 
 import androidx.compose.foundation.background
@@ -7,29 +8,28 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.set
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import android.graphics.Bitmap
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -149,12 +149,6 @@ internal suspend fun fetchWgStatus(settings: SettingsManager): WgStatus? {
 internal suspend fun toggleWireGuard(settings: SettingsManager, ifaceName: String, enable: Boolean): Boolean {
     val action = if (enable) "start" else "stop"
     val cmd = "systemctl $action wg-quick@$ifaceName"
-    val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "echo '${settings.password}' | sudo -S $cmd && echo 'ok'", settings.sshTimeoutMs).trim()
-    return res.split("\n").any { it.trim() == "ok" }
-}
-
-internal suspend fun restartWireGuard(settings: SettingsManager, ifaceName: String): Boolean {
-    val cmd = "systemctl restart wg-quick@$ifaceName"
     val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "echo '${settings.password}' | sudo -S $cmd && echo 'ok'", settings.sshTimeoutMs).trim()
     return res.split("\n").any { it.trim() == "ok" }
 }
@@ -282,9 +276,9 @@ except Exception as e:
 "
 """.trimIndent()
     
-    android.util.Log.e("WireGuard", "Tentative de création de client...")
+    android.util.Log.e("WireGuard", "Tentative de création de client\u00A0.")
     val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, script, settings.sshTimeoutMs).trim()
-    android.util.Log.e("WireGuard", "Réponse création: $res")
+    android.util.Log.e("WireGuard", "Réponse création\u00A0: $res.")
 
     val lines = res.split("\n")
     val okLine = lines.find { it.trim().startsWith("OK|") }
@@ -307,7 +301,7 @@ except Exception as e:
         return Result.success("PEER_ADDED_ONLY")
     }
 
-    // Si l'hôte contient déjà un port (ex: 1.2.3.4:5678), on ne rajoute pas le port par défaut
+
     val finalEndpoint = if (endpointHost.contains(":")) endpointHost else "$endpointHost:$endpointPort"
 
     val config = """
@@ -334,19 +328,35 @@ internal suspend fun getPublicKeyFromPrivate(settings: SettingsManager, privateK
 // ══════════════════════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+fun WireGuardScreen(
+    settings: SettingsManager,
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
+) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var wgStatus by remember { mutableStateOf<WgStatus?>(null) }
     var loading by remember { mutableStateOf(true) }
     var toggling by remember { mutableStateOf(false) }
-    var restarting by remember { mutableStateOf(false) }
+    val restarting by remember { mutableStateOf(false) }
     var snackMsg by remember { mutableStateOf<String?>(null) }
     val snackState = remember { SnackbarHostState() }
 
     var showAddDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf<WgPeer?>(null) }
     var showConfigDialog by remember { mutableStateOf<String?>(null) }
+
+    // Pre-fetch strings to avoid LocalContext.current warnings in lambdas
+    val wgStarted = stringResource(R.string.wg_started)
+    val wgStopped = stringResource(R.string.wg_stopped)
+    val updateError = stringResource(R.string.update_error)
+    val clientDeleted = stringResource(R.string.wg_client_deleted)
+    val errorDeletion = stringResource(R.string.wg_error_deletion)
+    val clientAddedSuccess = stringResource(R.string.wg_client_added_success)
+    val dockerError = stringResource(R.string.docker_error)
+    val clientRenamed = stringResource(R.string.wg_client_renamed)
+    val errorRenaming = stringResource(R.string.wg_error_renaming)
+    val configCopied = stringResource(R.string.wg_config_copied)
 
     fun refresh(showLoading: Boolean = true) {
         scope.launch { 
@@ -361,7 +371,7 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: 
     LaunchedEffect(Unit) {
         refresh(showLoading = true)
         while (true) {
-            delay(30000)
+            delay(30.seconds)
             refresh(showLoading = false)
         }
     }
@@ -378,7 +388,13 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: 
                         overflow = TextOverflow.Ellipsis
                     ) 
                 },
-                navigationIcon = { IconButton(onClick = onOpenMenu) { Icon(Icons.Default.Menu, stringResource(R.string.open_menu)) } },
+                navigationIcon = { 
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) { 
+                            Icon(Icons.Default.Menu, stringResource(R.string.open_menu)) 
+                        } 
+                    }
+                },
                 actions = {
                     IconButton(onClick = { refresh() }, enabled = !loading) {
                         if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp)) else Icon(Icons.Default.Refresh, stringResource(R.string.action_refresh))
@@ -408,9 +424,9 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: 
                         scope.launch {
                             toggling = true
                             if (toggleWireGuard(settings, s.interfaceName, !s.isUp)) {
-                                delay(1000); refresh()
-                                snackMsg = if (!s.isUp) context.getString(R.string.wg_started) else context.getString(R.string.wg_stopped)
-                            } else snackMsg = context.getString(R.string.update_error)
+                                delay(1.seconds); refresh()
+                                snackMsg = if (!s.isUp) wgStarted else wgStopped
+                            } else snackMsg = updateError
                             toggling = false
                         }
                     }
@@ -430,11 +446,11 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: 
                             scope.launch {
                                 loading = true
                                 if (deleteWgPeer(settings, s.interfaceName, peer.publicKey)) {
-                                    delay(500)
+                                    delay(500.milliseconds)
                                     refresh()
-                                    snackMsg = context.getString(R.string.wg_client_deleted)
+                                    snackMsg = clientDeleted
                                 } else {
-                                    snackMsg = context.getString(R.string.wg_error_deletion)
+                                    snackMsg = errorDeletion
                                 }
                                 loading = false
                             }
@@ -482,7 +498,6 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: 
                 // Si on a scanné une clé privée, on en déduit la publique sur le serveur
                 if (pubKey != null && pubKey.length == 44 && pubKey.endsWith("=")) {
                     // On vérifie si c'est une clé privée ou publique en demandant au serveur
-                    // (wg pubkey sur une clé publique ne change rien, sur une privée ça donne la publique)
                     val derived = getPublicKeyFromPrivate(settings, pubKey)
                     if (derived != null) finalPubKey = derived
                 }
@@ -490,13 +505,13 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: 
                 val result = addWgPeer(settings, wgStatus?.interfaceName ?: "wg0", name, dns, allowed, endpoint, port, finalPubKey)
                 result.onSuccess { config ->
                     if (config == "PEER_ADDED_ONLY") {
-                        snackMsg = context.getString(R.string.wg_client_added_success)
+                        snackMsg = clientAddedSuccess
                     } else {
                         showConfigDialog = config
                     }
                     refresh()
                 }.onFailure { 
-                    snackMsg = it.message ?: context.getString(R.string.docker_error)
+                    snackMsg = it.message ?: dockerError
                 }
                 loading = false
             }
@@ -512,9 +527,9 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: 
             scope.launch {
                 if (renameWgPeer(settings, wgStatus?.interfaceName ?: "wg0", peer.publicKey, newName)) {
                     refresh()
-                    snackMsg = context.getString(R.string.wg_client_renamed)
+                    snackMsg = clientRenamed
                 } else {
-                    snackMsg = context.getString(R.string.wg_error_renaming)
+                    snackMsg = errorRenaming
                 }
                 loading = false
             }
@@ -522,7 +537,6 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: 
     }
 
     showConfigDialog?.let { config ->
-        val context = androidx.compose.ui.platform.LocalContext.current
         var mode by remember { mutableStateOf("text") } // "text" ou "qr"
 
         AlertDialog(
@@ -588,7 +602,7 @@ fun WireGuardScreen(settings: SettingsManager, onClose: () -> Unit, onOpenMenu: 
                     if (mode == "text") {
                         val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                         cb.setPrimaryClip(android.content.ClipData.newPlainText("WG Config", config))
-                        snackMsg = context.getString(R.string.wg_config_copied)
+                        snackMsg = configCopied
                     }
                     showConfigDialog = null
                     refresh()
@@ -691,7 +705,7 @@ fun RenamePeerDialog(currentName: String, onDismiss: () -> Unit, onConfirm: (Str
 
 @Composable
 private fun WgInterfaceCard(status: WgStatus, toggling: Boolean, onToggle: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, if (status.isUp) WgGreen.copy(0.3f) else WgGrey.copy(0.2f))) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -776,7 +790,7 @@ private fun WgInfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(icon, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
-            "$label: $value", 
+            "$label\u00A0: $value",
             style = MaterialTheme.typography.labelSmall, 
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -807,14 +821,14 @@ private fun generateQrCode(text: String): Bitmap? {
     return try {
         val size = 512
         val bitMatrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size)
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
-        for (x in 0 until size) {
-            for (y in 0 until size) {
-                bitmap.setPixel(x, y, if (bitMatrix.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+        createBitmap(size, size, Bitmap.Config.RGB_565).apply {
+            for (x in 0 until size) {
+                for (y in 0 until size) {
+                    this[x, y] = if (bitMatrix.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+                }
             }
         }
-        bitmap
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         null
     }
 }

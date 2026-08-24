@@ -2,6 +2,8 @@ package com.rillmaster.pipanel.ui.theme
 
 import android.app.Activity
 import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -70,6 +72,10 @@ fun PiPanelTheme(
         else      -> LightColorScheme
     }
 
+    // Transition animée (~400 ms) vers le nouveau schéma de couleurs
+    // au lieu d'un basculement instantané.
+    val animatedScheme = colorScheme.animate()
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -81,8 +87,39 @@ fun PiPanelTheme(
     }
 
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = animatedScheme,
         typography  = Typography,
         content     = content
+    )
+}
+
+/**
+ * Anime chaque couleur du [ColorScheme] avec un tween de 400 ms, pour que
+ * le changement de thème (clair/sombre) soit progressif au lieu d'être instantané.
+ */
+@Composable
+fun ColorScheme.animate(): ColorScheme {
+    @Composable
+    fun anim(target: Color, label: String) =
+        animateColorAsState(targetValue = target, animationSpec = tween(400), label = label).value
+
+    return copy(
+        primary             = anim(primary, "primary"),
+        onPrimary           = anim(onPrimary, "onPrimary"),
+        primaryContainer    = anim(primaryContainer, "primaryContainer"),
+        onPrimaryContainer  = anim(onPrimaryContainer, "onPrimaryContainer"),
+        secondary           = anim(secondary, "secondary"),
+        onSecondary         = anim(onSecondary, "onSecondary"),
+        secondaryContainer  = anim(secondaryContainer, "secondaryContainer"),
+        onSecondaryContainer= anim(onSecondaryContainer, "onSecondaryContainer"),
+        tertiary            = anim(tertiary, "tertiary"),
+        onTertiary          = anim(onTertiary, "onTertiary"),
+        background          = anim(background, "background"),
+        onBackground        = anim(onBackground, "onBackground"),
+        surface             = anim(surface, "surface"),
+        onSurface           = anim(onSurface, "onSurface"),
+        surfaceVariant      = anim(surfaceVariant, "surfaceVariant"),
+        onSurfaceVariant    = anim(onSurfaceVariant, "onSurfaceVariant"),
+        outline             = anim(outline, "outline"),
     )
 }

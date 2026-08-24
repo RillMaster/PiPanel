@@ -44,6 +44,8 @@
     <string name="action_save">Save Configuration</string>
     <string name="action_delete">Delete</string>
     <string name="action_move">Move</string>
+    <string name="action_show">Show</string>
+    <string name="action_hide">Hide</string>
     <string name="action_start">Start</string>
     <string name="action_stop">Stop</string>
 
@@ -258,7 +260,7 @@
     <string name="wg_client_name_label">Client Name</string>
     <string name="wg_client_name_hint">ex: Pc RillMaster</string>
     <string name="wg_endpoint_label">Endpoint (Public IP or DNS)</string>
-    <string name="wg_endpoint_hint">ex: 82.225.223.88</string>
+    <string name="wg_endpoint_hint">ex: 208.67.222.222</string>
     <string name="wg_port_label">Interface Port (Server)</string>
     <string name="wg_dns_label">DNS</string>
     <string name="wg_allowed_ips_label">Allowed IPs (Client)</string>
@@ -418,6 +420,8 @@
     <string name="notif_channel_watchdog_desc">Alert if Raspberry Pi becomes unreachable</string>
     <string name="notif_channel_docker_name">Docker Services</string>
     <string name="notif_channel_docker_desc">Alert if a Docker container stops</string>
+    <string name="notif_channel_services_name">Critical Services</string>
+    <string name="notif_channel_services_desc">Alert if a critical service is inactive or failed</string>
 
     <string name="notif_pi_unreachable_title">🔴 Raspberry Pi unreachable</string>
     <string name="notif_pi_unreachable_msg">Unable to contact the Raspberry Pi. Check the network connection or power.</string>
@@ -427,10 +431,25 @@
     <string name="notif_ram_high_msg">RAM exceeds the threshold of %1$d%% (current: %2$d%% — %3$d/%4$d MB)</string>
     <string name="notif_docker_stopped_title">🐳 Docker container stopped</string>
     <string name="notif_docker_stopped_msg">The container \"%1$s\" has stopped unexpectedly.</string>
+    <string name="notif_temp_high_title">🌡️ High temperature – %1$.1f°C</string>
+    <string name="notif_temp_high_msg">CPU temperature exceeds the threshold of %1$d°C (current: %2$.1f°C)</string>
+    <string name="notif_disk_high_title">💾 Disk space low – %1$d%%</string>
+    <string name="notif_disk_high_msg">Disk usage on / exceeds the threshold of %1$d%% (current: %2$d%%)</string>
+    <string name="notif_service_down_title">⚙️ Critical service down</string>
+    <string name="notif_service_down_msg">The service \"%1$s\" is %2$s on the Raspberry Pi.</string>
+
+    <!-- Réglages notifications : disque & services -->
+    <string name="notif_settings_disk_title">Disk space alert</string>
+    <string name="notif_settings_disk_threshold">Disk usage threshold</string>
+    <string name="notif_settings_services_title">Critical services</string>
+    <string name="notif_settings_services_desc">Alert sent if one of these services is inactive or failed.</string>
+    <string name="notif_settings_services_list_label">Services to monitor (comma separated)</string>
 
     <!-- Widget Service -->
     <string name="widget_service_title">Widget Monitoring</string>
     <string name="widget_service_desc">Real-time statistics update...</string>
+    <string name="desc_widget_cpu_temp">Current CPU temperature with high temperature alert.</string>
+    <string name="desc_widget_docker">Running/total Docker containers at a glance.</string>
 
     <!-- Pi-hole Configuration -->
     <string name="pihole_config_title">Pi-hole Configuration</string>
@@ -499,6 +518,14 @@
     <string name="net_scan_device_offline">Offline</string>
     <string name="net_scan_unknown_host">Unknown Host</string>
     <string name="net_scan_devices_found">devices found</string>
+    <string name="net_scan_search_placeholder">Search device (IP, name, MAC, vendor)&#8230;</string>
+    <string name="net_scan_search_no_result">No device matches your search</string>
+    <string name="net_scan_gateway_label">Gateway</string>
+    <string name="net_scan_copy_ip_action">Long-press to copy IP</string>
+    <string name="net_scan_ip_copied">IP address copied: %1$s</string>
+    <string name="net_scan_auto_refresh">Auto-refresh</string>
+    <string name="net_scan_last_scan">Last scan: %1$s</string>
+    <string name="net_scan_retry">Retry</string>
     <string name="nav_net_scan">Network Scanner</string>
 
     <!-- Cron Scheduler -->
@@ -519,4 +546,24 @@
     <string name="cron_preview_weekly">Every %1$s at %2$s:%3$s</string>
     <string name="cron_save_success">Crontab updated successfully</string>
     <string name="nav_cron">Cron Scheduler</string>
+    <!-- Phase 2 : dashboard personnalisable, graphiques, coup d'œil -->
+    <string name="nav_charts">24h Charts</string>
+    <string name="charts_title">Charts — last 24 h</string>
+    <string name="charts_cpu_temp">CPU &amp; temperature</string>
+    <string name="charts_ram">RAM usage (MB)</string>
+    <string name="charts_empty">No data yet — readings arrive every 15 min</string>
+    <string name="dash_customize">Customize dashboard</string>
+    <string name="dash_customize_done">Done</string>
+    <string name="dash_section_stats">System stats</string>
+    <string name="dash_section_terminal">Quick terminal</string>
+    <string name="dash_drag_section">Drag to reorder</string>
+    <string name="glance_title">At a glance</string>
+    <string name="glance_pihole_blocked">%1$d domains blocked</string>
+    <string name="glance_docker_count">Docker: %1$d running / %2$d total</string>
+    <string name="glance_reboot">Reboot the Pi</string>
+    <string name="glance_reboot_title">Reboot the Pi?</string>
+    <string name="glance_reboot_msg">The Raspberry Pi will reboot immediately. Continue?</string>
+    <string name="glance_unavailable">N/A</string>
+    <string name="glance_pihole_blocked_fmt">%1$d domains blocked</string>
+    <string name="glance_docker_count_fmt">Docker: %1$d running / %2$d total</string>
 </resources>

@@ -38,6 +38,7 @@ object PiHoleWidgetKeys {
     val blockingPct  = doublePreferencesKey("pihole_blocking_pct")
     val lastUpdate   = stringPreferencesKey("pihole_last_update")
     val ignoreUntil  = longPreferencesKey("pihole_ignore_until")
+    val pending      = booleanPreferencesKey("pihole_pending")
 }
 
 class PiHoleWidget : GlanceAppWidget() {
@@ -57,6 +58,7 @@ class PiHoleWidget : GlanceAppWidget() {
         val queries = prefs[PiHoleWidgetKeys.queries] ?: 0
         val pct     = prefs[PiHoleWidgetKeys.blockingPct] ?: 0.0
         val time    = prefs[PiHoleWidgetKeys.lastUpdate] ?: "--:--"
+        val pending = prefs[PiHoleWidgetKeys.pending] ?: false
 
         val piGreen = Color(0xFF66BB6A)
         val piRed   = Color(0xFFEF5350)
@@ -87,7 +89,11 @@ class PiHoleWidget : GlanceAppWidget() {
                         style = TextStyle(color = ColorProvider(day = Color.White, night = Color.White), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     )
                     Text(
-                        text = if (enabled) "Filtrage en cours" else "Filtrage arrêté",
+                        text = when {
+                            pending -> "Basculement en cours…"
+                            enabled -> "Filtrage en cours"
+                            else    -> "Filtrage arrêté"
+                        },
                         style = TextStyle(color = ColorProvider(day = Color.White.copy(alpha = 0.6f), night = Color.White.copy(alpha = 0.6f)), fontSize = 10.sp)
                     )
                 }
@@ -201,6 +207,7 @@ class TogglePiHoleActionCallback : ActionCallback {
         ids.forEach { id ->
             updateAppWidgetState(context, id) { prefs ->
                 prefs[PiHoleWidgetKeys.enabled] = newVal
+                prefs[PiHoleWidgetKeys.pending] = true
                 prefs[PiHoleWidgetKeys.ignoreUntil] = now + 30_000 // Verrou de 30s
             }
             PiHoleWidget().update(context, id)
@@ -221,6 +228,7 @@ class TogglePiHoleActionCallback : ActionCallback {
             ids.forEach { id ->
                 updateAppWidgetState(context, id) { prefs ->
                     prefs[PiHoleWidgetKeys.enabled] = !newVal
+                    prefs[PiHoleWidgetKeys.pending] = false
                     prefs[PiHoleWidgetKeys.ignoreUntil] = 0L
                 }
                 PiHoleWidget().update(context, id)
@@ -228,6 +236,12 @@ class TogglePiHoleActionCallback : ActionCallback {
         } else {
             Log.e("Widget", "PiHoleWidget: SSH OK, rafraîchissement global dans 2s")
             kotlinx.coroutines.delay(2000)
+            ids.forEach { id ->
+                updateAppWidgetState(context, id) { prefs ->
+                    prefs[PiHoleWidgetKeys.pending] = false
+                }
+                PiHoleWidget().update(context, id)
+            }
             WidgetUpdateService.start(context)
         }
     }

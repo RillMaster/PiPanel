@@ -70,7 +70,8 @@ suspend fun fetchServices(settings: SettingsManager): Result<List<LinuxService>>
 fun ServicesScreen(
     settings: SettingsManager,
     onClose: () -> Unit,
-    onOpenMenu: () -> Unit
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
     var services by remember { mutableStateOf<List<LinuxService>>(emptyList()) }
@@ -118,8 +119,10 @@ fun ServicesScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.services_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 },
                 actions = {

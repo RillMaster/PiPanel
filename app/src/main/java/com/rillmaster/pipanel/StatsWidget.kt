@@ -252,6 +252,17 @@ class UpdateStatsWorker(context: Context, params: WorkerParameters) : CoroutineW
             StatsWidget().update(context, glanceId)
         }
 
+        // Le widget Température CPU partage la même source de stats
+        val cpuTempIds = GlanceAppWidgetManager(context).getGlanceIds(CpuTempWidget::class.java)
+        cpuTempIds.forEach { id ->
+            updateAppWidgetState(context, id) { prefs ->
+                prefs[CpuTempWidgetKeys.temp]       = stats.tempCelsius
+                prefs[CpuTempWidgetKeys.lastUpdate] = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+            }
+            CpuTempWidget().update(context, id)
+        }
+        if (cpuTempIds.isNotEmpty()) CpuTempWidget.checkTempAlert(context, stats.tempCelsius)
+
         return Result.success()
     }
 }

@@ -22,7 +22,8 @@ import androidx.compose.ui.unit.dp
 fun NotificationSettingsScreen(
     settings: SettingsManager,
     onBack  : () -> Unit = {},
-    onOpenMenu: () -> Unit
+    onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
     val context = LocalContext.current
 
@@ -34,6 +35,10 @@ fun NotificationSettingsScreen(
     var watchdogEnabled  by remember { mutableStateOf(settings.watchdogEnabled) }
     var watchdogInterval by remember { mutableFloatStateOf(settings.watchdogIntervalSeconds.toFloat()) }
     var dockerEnabled    by remember { mutableStateOf(settings.dockerAlertsEnabled) }
+    var diskEnabled      by remember { mutableStateOf(settings.diskAlertsEnabled) }
+    var diskThreshold    by remember { mutableFloatStateOf(settings.diskThreshold.toFloat()) }
+    var servicesEnabled  by remember { mutableStateOf(settings.serviceAlertsEnabled) }
+    var criticalServices by remember { mutableStateOf(settings.criticalServices) }
 
     Scaffold(
         topBar = {
@@ -46,8 +51,10 @@ fun NotificationSettingsScreen(
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 }
             )
@@ -140,6 +147,48 @@ fun NotificationSettingsScreen(
                         text  = "Alerte envoyée dès qu'un conteneur s'arrête de manière inattendue.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // ── Disque : de 50% à 100%, pas de 5 ───────────────────────────
+                AlertSectionCard(
+                    icon     = Icons.Default.SdCard,
+                    title    = stringResource(R.string.notif_settings_disk_title),
+                    enabled  = diskEnabled,
+                    onToggle = { diskEnabled = it; settings.diskAlertsEnabled = it }
+                ) {
+                    ThresholdSlider(
+                        label      = stringResource(R.string.notif_settings_disk_threshold),
+                        value      = diskThreshold,
+                        unit       = "%",
+                        enabled    = diskEnabled,
+                        valueRange = 50f..100f,
+                        step       = 5,
+                        onChanged  = { diskThreshold = it; settings.diskThreshold = it.toInt() }
+                    )
+                }
+
+                // ── Services critiques ─────────────────────────────────────────
+                AlertSectionCard(
+                    icon     = Icons.Default.Build,
+                    title    = stringResource(R.string.notif_settings_services_title),
+                    enabled  = servicesEnabled,
+                    onToggle = { servicesEnabled = it; settings.serviceAlertsEnabled = it }
+                ) {
+                    Text(
+                        text  = stringResource(R.string.notif_settings_services_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value         = criticalServices,
+                        onValueChange = {
+                            criticalServices = it
+                            settings.criticalServices = it
+                        },
+                        label = { Text(stringResource(R.string.notif_settings_services_list_label)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }

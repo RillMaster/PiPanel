@@ -2,7 +2,9 @@ package com.rillmaster.pipanel
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -22,12 +24,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -64,19 +71,22 @@ data class WiringSection(
 @Composable
 fun SensorDashboardScreen(
     settings: SettingsManager,
-    onClose : () -> Unit,
     onOpenMenu: () -> Unit,
+    showNavigationIcon: Boolean = true
 ) {
-    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     var pollingEnabled  by remember { mutableStateOf(value = false) }
     var pollIntervalSec by remember { mutableIntStateOf(5) }
     val showWiring      = remember { mutableStateOf(value = false) }
 
-    var ds18b20  by remember { mutableStateOf(SensorState(context.getString(R.string.sensor_ds18b20_name))) }
-    var dht22Tmp by remember { mutableStateOf(SensorState(context.getString(R.string.sensor_dht22_temp_name))) }
-    var dht22Hum by remember { mutableStateOf(SensorState(context.getString(R.string.sensor_dht22_hum_name))) }
+    val ds18b20Name  = stringResource(R.string.sensor_ds18b20_name)
+    val dht22TmpName = stringResource(R.string.sensor_dht22_temp_name)
+    val dht22HumName = stringResource(R.string.sensor_dht22_hum_name)
+
+    var ds18b20  by remember { mutableStateOf(SensorState(ds18b20Name)) }
+    var dht22Tmp by remember { mutableStateOf(SensorState(dht22TmpName)) }
+    var dht22Hum by remember { mutableStateOf(SensorState(dht22HumName)) }
 
     // ── Affichage schéma câblage ──────────────────────────────────────────────
     if (showWiring.value) {
@@ -140,7 +150,7 @@ fun SensorDashboardScreen(
                 dht22Hum = dht22Hum.copy(isOnline = false, error = e.message)
             }
 
-            delay(pollIntervalSec * 1000L)
+            delay(pollIntervalSec.seconds)
         }
     }
 
@@ -157,8 +167,10 @@ fun SensorDashboardScreen(
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onOpenMenu) {
+                            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.open_menu))
+                        }
                     }
                 },
                 actions = {
@@ -465,8 +477,8 @@ fun WiringDiagramScreen(onClose: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Carte intro GPIO Raspberry Pi
-            RpiGpioBanner()
+            // Nouveau Schéma GPIO Complet
+            FullGpioHeaderCard()
 
             sections.forEach { section ->
                 WiringSectionCard(section)
@@ -478,70 +490,79 @@ fun WiringDiagramScreen(onClose: () -> Unit) {
     }
 }
 
-// ── Bannière GPIO Raspberry Pi ────────────────────────────────────────────────
+// ── Schéma GPIO Complet ──────────────────────────────────────────────────────
 
 @Composable
-private fun RpiGpioBanner() {
+private fun FullGpioHeaderCard() {
+    var showFullImage by remember { mutableStateOf(false) }
+
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1E1E2E)
-        ),
-        shape = RoundedCornerShape(16.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showFullImage = true },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    Icons.Default.Memory,
-                    contentDescription = null,
-                    tint = Color(0xFF4CAF50),
-                    modifier = Modifier.size(20.dp)
-                )
-                Text(
-                    stringResource(R.string.wiring_rpi_gpio_ref),
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                Icon(Icons.Default.Memory, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Raspberry Pi GPIO Header", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             }
 
-            // Mini-représentation des pins utilisés
-            val usedPins = listOf(
-                Triple("3.3V",  "Pin 1",  Color(0xFFFF5722)),
-                Triple("GPIO4", "Pin 7",  Color(0xFF4CAF50)),
-                Triple("GND",   "Pin 6",  Color(0xFF9E9E9E)),
+            Image(
+                painter = painterResource(id = R.drawable.rpi_gpio_diagram),
+                contentDescription = "GPIO Diagram",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Fit
             )
-            usedPins.forEach { (label, pin, color) ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .clip(CircleShape)
-                            .background(color)
-                    )
-                    Text(
-                        "$pin — $label",
-                        color    = Color.White,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-
+            
             Text(
-                stringResource(R.string.wiring_pinout_tip),
-                color    = Color(0xFFAAAAAA),
-                fontSize = 11.sp
+                "🔍 Tap to enlarge",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 8.dp)
             )
         }
     }
+
+    if (showFullImage) {
+        Dialog(
+            onDismissRequest = { showFullImage = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.9f))
+                    .clickable { showFullImage = false },
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.rpi_gpio_diagram),
+                    contentDescription = "Full GPIO Diagram",
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    contentScale = ContentScale.Fit
+                )
+                IconButton(
+                    onClick = { showFullImage = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                }
+            }
+        }
+    }
 }
+
+// Les anciennes fonctions GpioPin et PinRowLayout ne sont plus nécessaires
 
 // ── Carte section câblage ─────────────────────────────────────────────────────
 

@@ -1,6 +1,7 @@
 package com.rillmaster.pipanel
 
 import android.content.Context
+import android.util.Log
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.ChannelShell
@@ -10,7 +11,6 @@ import com.jcraft.jsch.Session
 import com.jcraft.jsch.SftpException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.BufferedWriter
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Vector
@@ -18,37 +18,36 @@ import java.util.Vector
 class ShellSession(
     private val session: Session,
     private val channel: ChannelShell,
+    val inputStream: InputStream,
+    private val rawOut: OutputStream
 ) {
-    private val writer: BufferedWriter = channel.outputStream.bufferedWriter(Charsets.UTF_8)
-
-    // Stream brut pour les caractères de contrôle (Ctrl+C, flèches, etc.)
-    private val rawOut: OutputStream = channel.outputStream
-
-    val inputStream: InputStream = channel.inputStream
-    val isConnected get() = channel.isConnected && !channel.isClosed
+    val isConnected get() = channel.isConnected && !channel.isClosed && session.isConnected
 
     /** Envoie une commande texte suivie d'un retour à la ligne. */
-    @Suppress("unused")
-    suspend fun send(command: String) = withContext(Dispatchers.IO) {
-        runCatching {
-            writer.write(command + "\n")
-            writer.flush()
-        }.onFailure { it.printStackTrace() }
-    }
+    suspend fun send(command: String) = sendRaw(command + "\n")
 
     /**
      * Envoie des octets bruts sans newline — pour les séquences de contrôle
      * (Ctrl+C = \u0003, flèche haut = \u001B[A, Tab = \u0009, etc.)
      */
     suspend fun sendRaw(bytes: String) = withContext(Dispatchers.IO) {
+        if (!isConnected) return@withContext
         runCatching {
             rawOut.write(bytes.toByteArray(Charsets.UTF_8))
             rawOut.flush()
-        }.onFailure { it.printStackTrace() }
+        }.onFailure { 
+            Log.e("ShellSession", "Failed to send data: ${it.message}")
+        }
+    }
+
+    fun setWindowSize(cols: Int, rows: Int) {
+        if (!isConnected) return
+        try {
+            channel.setPtySize(cols, rows, 0, 0)
+        } catch (_: Exception) {}
     }
 
     fun close() {
-        runCatching { writer.close() }
         runCatching { channel.disconnect() }
         runCatching { session.disconnect() }
     }
@@ -101,6 +100,40 @@ object SshClient {
         }
     }
 
+    /**
+     * Crée une session JSch authentifiée — par clé privée si fournie,
+     * sinon par mot de passe.
+     */
+    private fun createSession(
+        jsch: JSch,
+        user: String,
+        host: String,
+        port: Int,
+        password: String,
+        privateKey: String = "",
+        keyPassphrase: String = ""
+    ): Session {
+        if (privateKey.isNotBlank()) {
+            jsch.addIdentity(
+                "pipanel_key",
+                privateKey.toByteArray(Charsets.UTF_8),
+                null,
+                if (keyPassphrase.isBlank()) null else keyPassphrase.toByteArray(Charsets.UTF_8)
+            )
+        }
+        val session = jsch.getSession(user, host, port)
+        if (privateKey.isBlank()) {
+            @Suppress("DEPRECATION")
+            session.setPassword(password)
+        }
+        session.setConfig("StrictHostKeyChecking", "no")
+        // Auth par clé uniquement si clé présente (évite les prompts interactifs)
+        if (privateKey.isNotBlank()) {
+            session.setConfig("PreferredAuthentications", "publickey")
+        }
+        return session
+    }
+
     // ─── Exécution d'une commande unique ─────────────────────────────────────────
     suspend fun execute(
         host: String,
@@ -109,15 +142,14 @@ object SshClient {
         password: String,
         command: String,
         timeoutMs: Int = 8000,
-        context: Context? = null
+        context: Context? = null,
+        privateKey: String = "",
+        keyPassphrase: String = ""
     ): String = withContext(Dispatchers.IO) {
         android.util.Log.e("SSH", "SSH: Tentative connexion $host:$port ($user)...")
         try {
             val jsch = JSch()
-            val session = jsch.getSession(user, host, port)
-            @Suppress("DEPRECATION")
-            session.setPassword(password)
-            session.setConfig("StrictHostKeyChecking", "no")
+            val session = createSession(jsch, user, host, port, password, privateKey, keyPassphrase)
             session.connect(timeoutMs)
 
             android.util.Log.e("SSH", "SSH: Connecté ! Exécution: ${command.take(60)}...")
@@ -154,7 +186,7 @@ object SshClient {
         } catch (e: Exception) {
             val errorMsg = context?.let { parseError(it, e) } ?: (e.message ?: "SSH Error")
             android.util.Log.e("SSH", "SSH: ERREUR - $errorMsg")
-            errorMsg
+            if (errorMsg.startsWith("[err]")) errorMsg else "[err] $errorMsg"
         }
     }
 
@@ -164,21 +196,28 @@ object SshClient {
         port: Int = 22,
         user: String,
         password: String,
+        privateKey: String = "",
+        keyPassphrase: String = ""
     ): Result<ShellSession> = withContext(Dispatchers.IO) {
         runCatching {
             val jsch = JSch()
-            val session = jsch.getSession(user, host, port)
-            @Suppress("DEPRECATION")
-            session.setPassword(password)
-            session.setConfig("StrictHostKeyChecking", "no")
+            val session = createSession(jsch, user, host, port, password, privateKey, keyPassphrase)
+            session.setServerAliveInterval(30000)
             session.connect(8000)
 
             val channel = session.openChannel("shell") as ChannelShell
-            channel.setPtyType("vt100")
-            channel.setPtySize(200, 50, 1000, 500)
-            channel.connect()
+            channel.setPtyType("xterm")
+            channel.setPtySize(80, 24, 0, 0)
 
-            ShellSession(session, channel)
+            val ins = channel.inputStream
+            val outs = channel.outputStream
+            
+            session.setServerAliveInterval(30000)
+            session.setServerAliveCountMax(3)
+            
+            channel.connect(10000)
+
+            ShellSession(session, channel, ins, outs)
         }
     }
 
@@ -191,10 +230,10 @@ object SshClient {
         var channel: ChannelSftp? = null
         try {
             val jsch = JSch()
-            session = jsch.getSession(settings.username, settings.host, settings.port)
-            @Suppress("DEPRECATION")
-            session.setPassword(settings.password)
-            session.setConfig("StrictHostKeyChecking", "no")
+            session = createSession(
+                jsch, settings.username, settings.host, settings.port,
+                settings.password, settings.privateKey, settings.keyPassphrase
+            )
             session.connect(8000)
 
             channel = session.openChannel("sftp") as ChannelSftp
@@ -206,6 +245,36 @@ object SshClient {
         } finally {
             channel?.disconnect()
             session?.disconnect()
+        }
+    }
+
+    /**
+     * Ouvre un flux SFTP pour lecture (Streaming).
+     */
+    suspend fun getInputStream(settings: SettingsManager, remotePath: String): Result<InputStream> = withContext(Dispatchers.IO) {
+        try {
+            val jsch = JSch()
+            val session = createSession(
+                jsch, settings.username, settings.host, settings.port,
+                settings.password, settings.privateKey, settings.keyPassphrase
+            )
+            session.connect(8000)
+
+            val channel = session.openChannel("sftp") as ChannelSftp
+            channel.connect()
+
+            val stream = channel.get(remotePath)
+            // On renvoie un InputStream qui fermera la session SFTP à la fermeture
+            val wrappedStream = object : java.io.FilterInputStream(stream) {
+                override fun close() {
+                    super.close()
+                    channel.disconnect()
+                    session.disconnect()
+                }
+            }
+            Result.success(wrappedStream)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 }

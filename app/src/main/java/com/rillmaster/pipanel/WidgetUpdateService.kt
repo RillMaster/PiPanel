@@ -110,6 +110,7 @@ class WidgetUpdateService : Service() {
                         val ignoreUntil = prefs[PiHoleWidgetKeys.ignoreUntil] ?: 0L
                         if (currentTime > ignoreUntil) {
                             prefs[PiHoleWidgetKeys.enabled] = piStats.enabled
+                            prefs[PiHoleWidgetKeys.pending] = false
                         } else {
                             Log.e("Widget", "Service: PiHole update ON/OFF ignoré (verrou actif pour ${ (ignoreUntil - currentTime)/1000 }s)")
                         }
@@ -163,9 +164,54 @@ class WidgetUpdateService : Service() {
             }
         }
 
-        if (statsIds.isEmpty() && piHoleIds.isEmpty() && wgIds.isEmpty() && sensorIds.isEmpty()) {
+        // 5. Température CPU (+ alerte surchauffe avec cooldown)
+        val cpuTempIds = manager.getGlanceIds(CpuTempWidget::class.java)
+        if (cpuTempIds.isNotEmpty()) {
+            val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            cpuTempIds.forEach { id ->
+                updateAppWidgetState(context, id) { prefs ->
+                    prefs[CpuTempWidgetKeys.temp]       = stats.tempCelsius
+                    prefs[CpuTempWidgetKeys.lastUpdate] = time
+                }
+                CpuTempWidget().update(context, id)
+            }
+            CpuTempWidget.checkTempAlert(context, stats.tempCelsius)
+        }
+
+        // 6. Docker (compteur conteneurs)
+        val dockerIds = manager.getGlanceIds(DockerWidget::class.java)
+        if (dockerIds.isNotEmpty()) {
+            val counts = fetchDockerCounts(settings)
+            if (counts != null) {
+                val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                dockerIds.forEach { id ->
+                    updateAppWidgetState(context, id) { prefs ->
+                        prefs[DockerWidgetKeys.running]    = counts.first
+                        prefs[DockerWidgetKeys.total]      = counts.second
+                        prefs[DockerWidgetKeys.lastUpdate] = time
+                    }
+                    DockerWidget().update(context, id)
+                }
+            }
+        }
+
+        if (statsIds.isEmpty() && piHoleIds.isEmpty() && wgIds.isEmpty() && sensorIds.isEmpty()
+            && cpuTempIds.isEmpty() && dockerIds.isEmpty()) {
             stopSelf()
         }
+    }
+
+    /** Retourne (running, total) des conteneurs Docker, ou null si Docker indisponible. */
+    private suspend fun fetchDockerCounts(settings: SettingsManager): Pair<Int, Int>? = withContext(Dispatchers.IO) {
+        try {
+            val runningRaw = SshClient.execute(settings.host, settings.port, settings.username, settings.password,
+                "docker ps -q | wc -l", settings.sshTimeoutMs)
+            val totalRaw = SshClient.execute(settings.host, settings.port, settings.username, settings.password,
+                "docker ps -aq | wc -l", settings.sshTimeoutMs)
+            val running = runningRaw.trim().toIntOrNull() ?: return@withContext null
+            val total   = totalRaw.trim().toIntOrNull() ?: return@withContext null
+            running to total
+        } catch (_: Exception) { null }
     }
 
     private suspend fun fetchDS18B20(settings: SettingsManager): Float? = withContext(Dispatchers.IO) {
