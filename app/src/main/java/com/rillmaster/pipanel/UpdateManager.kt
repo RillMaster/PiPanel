@@ -10,8 +10,10 @@ import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import com.rillmaster.pipanel.update.ChangelogParser
 import com.rillmaster.pipanel.update.MarkdownRenderer
+import com.rillmaster.pipanel.update.UpdateApi
 import kotlinx.coroutines.*
-import org.json.JSONObject
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -19,6 +21,13 @@ import java.net.URL
 import kotlin.time.Duration.Companion.seconds
 
 class UpdateManager(private val context: Context) {
+
+    private val retrofit = Retrofit.Builder()
+        .baseUrl("https://raw.githubusercontent.com/")
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+
+    private val api = retrofit.create(UpdateApi::class.java)
 
     companion object {
         const val VERSION_URL =
@@ -33,14 +42,13 @@ class UpdateManager(private val context: Context) {
         scope: CoroutineScope,
         downloadProgress: MutableIntState
     ) {
-        scope.launch(Dispatchers.IO) {
+        scope.launch {
             try {
-                val timestamp         = System.currentTimeMillis()
-                val jsonRaw           = URL("$VERSION_URL?t=$timestamp").readText().trim()
-                val jsonObject        = JSONObject(jsonRaw)
-                val latestVersionCode = jsonObject.getLong("versionCode")
-                val latestVersionName = jsonObject.optString("versionName", activity.getString(R.string.version_unknown))
-                val apkUrl            = jsonObject.getString("url")
+                val timestamp = System.currentTimeMillis()
+                val versionInfo = api.getVersion("${VERSION_URL}?t=$timestamp")
+                val latestVersionCode = versionInfo.versionCode
+                val latestVersionName = versionInfo.versionName
+                val apkUrl = versionInfo.url
 
                 val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     activity.packageManager.getPackageInfo(activity.packageName, 0).longVersionCode
@@ -49,15 +57,11 @@ class UpdateManager(private val context: Context) {
                     activity.packageManager.getPackageInfo(activity.packageName, 0).versionCode.toLong()
                 }
 
-                withContext(Dispatchers.Main) {
-                    if (latestVersionCode > currentVersionCode) {
-                        val changelog = try {
-                            withContext(Dispatchers.IO) {
-                                URL("$CHANGELOG_URL?t=$timestamp").readText().trim()
-                            }
-                        } catch (_: Exception) { "" }
-                        showUpdateDialog(activity, scope, downloadProgress, changelog, apkUrl, latestVersionName)
-                    }
+                if (latestVersionCode > currentVersionCode) {
+                    val changelog = try {
+                        api.getChangelog("${CHANGELOG_URL}?t=$timestamp").string().trim()
+                    } catch (_: Exception) { "" }
+                    showUpdateDialog(activity, scope, downloadProgress, changelog, apkUrl, latestVersionName)
                 }
             } catch (e: Exception) { e.printStackTrace() }
         }

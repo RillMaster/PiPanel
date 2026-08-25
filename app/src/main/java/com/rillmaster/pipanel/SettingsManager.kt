@@ -175,6 +175,7 @@ class SettingsManager(context: Context) {
     // ── Raccourcis terminal ───────────────────────────────────────────────────
     var sshShortcuts: List<SshShortcut>
         get() {
+            getCurrentProfile()?.shortcuts?.let { return it }
             val json = prefs.getString("ssh_shortcuts_v2", null)
             if (json == null) {
                 // Migration from v1
@@ -200,8 +201,13 @@ class SettingsManager(context: Context) {
             } catch (_: Exception) { defaultSshShortcuts() }
         }
         set(value) {
-            val json = gson.toJson(value)
-            prefs.edit { putString("ssh_shortcuts_v2", json) }
+            val current = getCurrentProfile()
+            if (current != null) {
+                updateCurrentProfile { it.copy(shortcuts = value) }
+            } else {
+                val json = gson.toJson(value)
+                prefs.edit { putString("ssh_shortcuts_v2", json) }
+            }
         }
 
     fun defaultSshShortcuts() = listOf(
@@ -331,6 +337,20 @@ class SettingsManager(context: Context) {
             } catch (_: Exception) { emptyList() }
         }
         set(value) = prefs.edit { putString("file_manager_bookmarks", gson.toJson(value)) }
+
+    // ── Historique des commandes ──────────────────────────────────────────────
+    fun getCommandHistory(profileId: String): List<String> {
+        val json = prefs.getString("history_$profileId", null)
+        return if (json == null) emptyList()
+        else try {
+            val type = object : TypeToken<List<String>>() {}.type
+            gson.fromJson(json, type)
+        } catch (_: Exception) { emptyList() }
+    }
+
+    fun saveCommandHistory(profileId: String, history: List<String>) {
+        prefs.edit { putString("history_$profileId", gson.toJson(history)) }
+    }
 
     // ── Planifications GPIO ───────────────────────────────────────────────────
     var gpioSchedules: List<GpioSchedule>
