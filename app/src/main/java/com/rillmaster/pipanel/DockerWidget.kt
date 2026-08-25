@@ -1,6 +1,7 @@
 package com.rillmaster.pipanel
 
 import android.content.Context
+import com.rillmaster.pipanel.model.Screen
 import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color

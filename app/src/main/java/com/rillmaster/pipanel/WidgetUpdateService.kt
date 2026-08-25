@@ -10,6 +10,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
+import com.rillmaster.pipanel.model.SystemStats
+import com.rillmaster.pipanel.model.fetchSystemStats
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*

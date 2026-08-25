@@ -1,6 +1,7 @@
 package com.rillmaster.pipanel
 
 import androidx.compose.animation.*
+import com.rillmaster.pipanel.model.SystemStats
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box

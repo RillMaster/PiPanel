@@ -3,6 +3,7 @@ package com.rillmaster.pipanel
 import android.content.Context
 import androidx.core.content.edit
 import com.google.gson.Gson
+import com.rillmaster.pipanel.model.Screen
 import com.google.gson.reflect.TypeToken
 import org.json.JSONArray
 
