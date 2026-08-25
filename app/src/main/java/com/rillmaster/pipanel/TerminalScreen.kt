@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -775,12 +776,14 @@ fun TerminalScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             settings.profiles.find { it.id == settings.currentProfileId }?.name ?: "Terminal",
                             fontWeight = FontWeight.Bold,
                             fontSize   = 16.sp,
-                            color      = Color.White
+                            color      = Color.White,
+                            maxLines   = 1,
+                            overflow   = TextOverflow.Ellipsis
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             val dotColor = when {
@@ -790,7 +793,7 @@ fun TerminalScreen(
                             }
                             Box(modifier = Modifier.size(6.dp).background(dotColor, RoundedCornerShape(50)))
                             Spacer(Modifier.width(6.dp))
-                            Text(status, fontSize = 10.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                            Text(status, fontSize = 10.sp, color = Color.Gray, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 },

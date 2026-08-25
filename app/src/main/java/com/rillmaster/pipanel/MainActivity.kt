@@ -86,6 +86,11 @@ import sh.calvin.reorderable.ReorderableColumn
 import java.net.URL
 import android.view.animation.AnticipateInterpolator
 import android.animation.ObjectAnimator
+import android.graphics.Typeface
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
 import android.view.View
 import androidx.core.animation.doOnEnd
 
@@ -384,10 +389,71 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /**
+     * Extrait uniquement la section du changelog correspondant à [version]
+     * (ex: "## [1.5.3]" … jusqu'au prochain titre "## [...]").
+     * Retourne le changelog complet si aucune section ne correspond.
+     */
+    private fun extractVersionChangelog(fullChangelog: String, version: String): String {
+        val headerRegex = Regex("""^##+\s*\[?v?([0-9][0-9A-Za-z.\-]*)\]?.*""")
+        val result = StringBuilder()
+        var inside = false
+        for (line in fullChangelog.lines()) {
+            val match = headerRegex.find(line.trimStart())
+            if (match != null) {
+                if (inside) break                          // prochaine version → fin
+                if (match.groupValues[1] == version) { inside = true; continue }
+            } else if (inside) {
+                result.appendLine(line)
+            }
+        }
+        return result.toString().trim().ifEmpty { fullChangelog }
+    }
+
+    /**
+     * Rend un sous-ensemble de Markdown (titres #, gras **…**, puces - ou *)
+     * dans un CharSequence stylé pour l'AlertDialog natif.
+     */
+    private fun renderMarkdown(markdown: String): CharSequence {
+        val spannable = SpannableStringBuilder()
+        val lines = markdown.lines()
+        lines.forEachIndexed { index, rawLine ->
+            var line = rawLine
+            var headingLevel = 0
+            while (line.startsWith("#")) { headingLevel++; line = line.removePrefix("#") }
+            line = line.trimStart()
+            if (line.startsWith("- ") || line.startsWith("* ")) line = "• " + line.drop(2)
+
+            val lineStart = spannable.length
+            val boldRegex = Regex("""\*\*(.+?)\*\*""")
+            var last = 0
+            for (m in boldRegex.findAll(line)) {
+                spannable.append(line.substring(last, m.range.first))
+                val boldStart = spannable.length
+                spannable.append(m.groupValues[1])
+                spannable.setSpan(StyleSpan(Typeface.BOLD), boldStart, spannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                last = m.range.last + 1
+            }
+            spannable.append(line.substring(last))
+
+            if (headingLevel > 0 && spannable.length > lineStart) {
+                spannable.setSpan(StyleSpan(Typeface.BOLD), lineStart, spannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                val size = when (headingLevel) { 1 -> 1.3f; 2 -> 1.2f; else -> 1.1f }
+                spannable.setSpan(RelativeSizeSpan(size), lineStart, spannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            if (index < lines.size - 1) spannable.append("\n")
+        }
+        return spannable
+    }
+
     private fun showUpdateDialog(changelog: String, downloadUrl: String, latestVersion: String) {
-        val message = buildString {
+        val section = extractVersionChangelog(changelog, latestVersion)
+        val message = SpannableStringBuilder().apply {
             append(getString(R.string.update_message, latestVersion))
-            if (changelog.isNotEmpty()) append(getString(R.string.update_changelog, changelog))
+            if (section.isNotEmpty()) {
+                append(getString(R.string.update_changelog, ""))
+                append(renderMarkdown(section))
+            }
             append(getString(R.string.update_prompt))
         }
         android.app.AlertDialog.Builder(this)
