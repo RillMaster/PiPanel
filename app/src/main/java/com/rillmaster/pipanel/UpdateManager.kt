@@ -3,14 +3,98 @@ package com.rillmaster.pipanel
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.text.SpannableStringBuilder
+import androidx.compose.runtime.MutableIntState
 import androidx.core.content.FileProvider
+import androidx.fragment.app.FragmentActivity
+import com.rillmaster.pipanel.update.ChangelogParser
+import com.rillmaster.pipanel.update.MarkdownRenderer
 import kotlinx.coroutines.*
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.time.Duration.Companion.seconds
 
 class UpdateManager(private val context: Context) {
+
+    companion object {
+        const val VERSION_URL =
+            "https://raw.githubusercontent.com/RillMaster/PiPanel/main/version.json"
+        const val CHANGELOG_URL =
+            "https://raw.githubusercontent.com/RillMaster/PiPanel/main/changelog.md"
+    }
+
+    // ── Vérification des mises à jour ─────────────────────────────────────────
+    fun checkForUpdates(
+        activity: FragmentActivity,
+        scope: CoroutineScope,
+        downloadProgress: MutableIntState
+    ) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val timestamp         = System.currentTimeMillis()
+                val jsonRaw           = URL("$VERSION_URL?t=$timestamp").readText().trim()
+                val jsonObject        = JSONObject(jsonRaw)
+                val latestVersionCode = jsonObject.getLong("versionCode")
+                val latestVersionName = jsonObject.optString("versionName", activity.getString(R.string.version_unknown))
+                val apkUrl            = jsonObject.getString("url")
+
+                val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    activity.packageManager.getPackageInfo(activity.packageName, 0).longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    activity.packageManager.getPackageInfo(activity.packageName, 0).versionCode.toLong()
+                }
+
+                withContext(Dispatchers.Main) {
+                    if (latestVersionCode > currentVersionCode) {
+                        val changelog = try {
+                            withContext(Dispatchers.IO) {
+                                URL("$CHANGELOG_URL?t=$timestamp").readText().trim()
+                            }
+                        } catch (_: Exception) { "" }
+                        showUpdateDialog(activity, scope, downloadProgress, changelog, apkUrl, latestVersionName)
+                    }
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    private fun showUpdateDialog(
+        activity: FragmentActivity,
+        scope: CoroutineScope,
+        downloadProgress: MutableIntState,
+        changelog: String,
+        downloadUrl: String,
+        latestVersion: String
+    ) {
+        val section = ChangelogParser.extractVersionChangelog(changelog, latestVersion)
+        val message = SpannableStringBuilder().apply {
+            append(activity.getString(R.string.update_message, latestVersion))
+            if (section.isNotEmpty()) {
+                append(activity.getString(R.string.update_changelog, ""))
+                append(MarkdownRenderer.renderMarkdown(section))
+            }
+            append(activity.getString(R.string.update_prompt))
+        }
+        android.app.AlertDialog.Builder(activity)
+            .setTitle(activity.getString(R.string.update_available_title))
+            .setMessage(message)
+            .setPositiveButton(activity.getString(R.string.update_action_now)) { _, _ ->
+                downloadProgress.intValue = 0
+                downloadAndInstall(downloadUrl) { progress ->
+                    downloadProgress.intValue = progress
+                    if (progress == 100) {
+                        scope.launch { delay(3.seconds); downloadProgress.intValue = -2 }
+                    }
+                }
+            }
+            .setNegativeButton(activity.getString(R.string.update_action_later), null)
+            .show()
+    }
 
     fun downloadAndInstall(url: String, onProgress: (Int) -> Unit) {
 

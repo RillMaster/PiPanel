@@ -74,6 +74,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import androidx.work.WorkManager
 import com.rillmaster.pipanel.ui.theme.PiPanelTheme
+import com.rillmaster.pipanel.update.DownloadProgressDialog
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -182,11 +183,6 @@ data class DashboardTileData(
 // ══════════════════════════════════════════════════════════════════════════════
 class MainActivity : FragmentActivity() {
 
-    private val versionUrl =
-        "https://raw.githubusercontent.com/RillMaster/PiPanel/main/version.json"
-    private val changelogUrl =
-        "https://raw.githubusercontent.com/RillMaster/PiPanel/main/changelog.md"
-
     private var downloadProgress = mutableIntStateOf(-2)
 
     companion object {
@@ -284,7 +280,10 @@ class MainActivity : FragmentActivity() {
                         settingsR.theme = newTheme
                         themePref       = newTheme
                     },
-                    onAppReady = { checkForUpdates() }
+                    onAppReady = {
+                        UpdateManager(this@MainActivity)
+                            .checkForUpdates(this@MainActivity, lifecycleScope, downloadProgress)
+                    }
                 )
             }
         }
@@ -301,175 +300,6 @@ class MainActivity : FragmentActivity() {
                 )
             }
         }
-    }
-
-    // ── Dialog progression téléchargement ────────────────────────────────────
-    @Composable
-    fun DownloadProgressDialog(progress: Int, onDismiss: () -> Unit) {
-        Dialog(onDismissRequest = { if (progress == -1) onDismiss() }) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                shape    = MaterialTheme.shapes.large
-            ) {
-                Column(
-                    modifier            = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(stringResource(R.string.update_title), style = MaterialTheme.typography.titleLarge)
-                    when (progress) {
-                        -1 -> {
-                            Icon(
-                                Icons.Default.Error, contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp)
-                            )
-                            Text(stringResource(R.string.update_error),
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium)
-                            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                                Text(stringResource(R.string.action_close))
-                            }
-                        }
-                        100 -> {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null,
-                                tint = Color(0xFF66BB6A), modifier = Modifier.size(48.dp))
-                            Text(stringResource(R.string.update_success), style = MaterialTheme.typography.bodyMedium)
-                            Text(stringResource(R.string.update_installing),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        else -> {
-                            Text(stringResource(R.string.update_downloading), style = MaterialTheme.typography.bodyMedium)
-                            LinearProgressIndicator(
-                                progress = { progress / 100f },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Text("$progress%",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary)
-                            Text(stringResource(R.string.update_wait),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // ── Vérification des mises à jour ─────────────────────────────────────────
-    private fun checkForUpdates() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val timestamp         = System.currentTimeMillis()
-                val jsonRaw           = URL("$versionUrl?t=$timestamp").readText().trim()
-                val jsonObject        = JSONObject(jsonRaw)
-                val latestVersionCode = jsonObject.getLong("versionCode")
-                val latestVersionName = jsonObject.optString("versionName", getString(R.string.version_unknown))
-                val apkUrl            = jsonObject.getString("url")
-
-                val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    packageManager.getPackageInfo(packageName, 0).longVersionCode
-                } else {
-                    @Suppress("DEPRECATION")
-                    packageManager.getPackageInfo(packageName, 0).versionCode.toLong()
-                }
-
-                withContext(Dispatchers.Main) {
-                    if (latestVersionCode > currentVersionCode) {
-                        val changelog = try {
-                            withContext(Dispatchers.IO) {
-                                URL("$changelogUrl?t=$timestamp").readText().trim()
-                            }
-                        } catch (_: Exception) { "" }
-                        showUpdateDialog(changelog, apkUrl, latestVersionName)
-                    }
-                }
-            } catch (e: Exception) { e.printStackTrace() }
-        }
-    }
-
-    /**
-     * Extrait uniquement la section du changelog correspondant à [version]
-     * (ex: "## [1.5.3]" … jusqu'au prochain titre "## [...]").
-     * Retourne le changelog complet si aucune section ne correspond.
-     */
-    private fun extractVersionChangelog(fullChangelog: String, version: String): String {
-        val headerRegex = Regex("""^##+\s*\[?v?([0-9][0-9A-Za-z.\-]*)\]?.*""")
-        val result = StringBuilder()
-        var inside = false
-        for (line in fullChangelog.lines()) {
-            val match = headerRegex.find(line.trimStart())
-            if (match != null) {
-                if (inside) break                          // prochaine version → fin
-                if (match.groupValues[1] == version) { inside = true; continue }
-            } else if (inside) {
-                result.appendLine(line)
-            }
-        }
-        return result.toString().trim().ifEmpty { fullChangelog }
-    }
-
-    /**
-     * Rend un sous-ensemble de Markdown (titres #, gras **…**, puces - ou *)
-     * dans un CharSequence stylé pour l'AlertDialog natif.
-     */
-    private fun renderMarkdown(markdown: String): CharSequence {
-        val spannable = SpannableStringBuilder()
-        val lines = markdown.lines()
-        lines.forEachIndexed { index, rawLine ->
-            var line = rawLine
-            var headingLevel = 0
-            while (line.startsWith("#")) { headingLevel++; line = line.removePrefix("#") }
-            line = line.trimStart()
-            if (line.startsWith("- ") || line.startsWith("* ")) line = "• " + line.drop(2)
-
-            val lineStart = spannable.length
-            val boldRegex = Regex("""\*\*(.+?)\*\*""")
-            var last = 0
-            for (m in boldRegex.findAll(line)) {
-                spannable.append(line.substring(last, m.range.first))
-                val boldStart = spannable.length
-                spannable.append(m.groupValues[1])
-                spannable.setSpan(StyleSpan(Typeface.BOLD), boldStart, spannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                last = m.range.last + 1
-            }
-            spannable.append(line.substring(last))
-
-            if (headingLevel > 0 && spannable.length > lineStart) {
-                spannable.setSpan(StyleSpan(Typeface.BOLD), lineStart, spannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                val size = when (headingLevel) { 1 -> 1.3f; 2 -> 1.2f; else -> 1.1f }
-                spannable.setSpan(RelativeSizeSpan(size), lineStart, spannable.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            if (index < lines.size - 1) spannable.append("\n")
-        }
-        return spannable
-    }
-
-    private fun showUpdateDialog(changelog: String, downloadUrl: String, latestVersion: String) {
-        val section = extractVersionChangelog(changelog, latestVersion)
-        val message = SpannableStringBuilder().apply {
-            append(getString(R.string.update_message, latestVersion))
-            if (section.isNotEmpty()) {
-                append(getString(R.string.update_changelog, ""))
-                append(renderMarkdown(section))
-            }
-            append(getString(R.string.update_prompt))
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle(getString(R.string.update_available_title))
-            .setMessage(message)
-            .setPositiveButton(getString(R.string.update_action_now)) { _, _ ->
-                downloadProgress.intValue = 0
-                UpdateManager(this).downloadAndInstall(downloadUrl) { progress ->
-                    downloadProgress.intValue = progress
-                    if (progress == 100) {
-                        lifecycleScope.launch { delay(3.seconds); downloadProgress.intValue = -2 }
-                    }
-                }
-            }
-            .setNegativeButton(getString(R.string.update_action_later), null)
-            .show()
     }
 
     // ══════════════════════════════════════════════════════════════════════════
