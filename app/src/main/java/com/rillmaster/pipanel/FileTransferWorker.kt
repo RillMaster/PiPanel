@@ -9,8 +9,8 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelSftp
-import com.jcraft.jsch.JSch
 import com.jcraft.jsch.SftpProgressMonitor
+import com.rillmaster.pipanel.ssh.SshSessionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -29,7 +29,9 @@ class FileTransferWorker(
         val host        = inputData.getString("host")       ?: return@withContext Result.failure()
         val port        = inputData.getInt("port", 22)
         val user        = inputData.getString("user")       ?: return@withContext Result.failure()
-        val pass        = inputData.getString("pass")       ?: return@withContext Result.failure()
+        val pass        = inputData.getString("pass")       ?: ""
+        val privateKey  = inputData.getString("privateKey") ?: ""
+        val keyPass     = inputData.getString("keyPass")    ?: ""
         val destTreeUri = inputData.getString("destTreeUri")
         val notifId     = inputData.getInt("notifId", remotePath.hashCode())
 
@@ -58,12 +60,9 @@ class FileTransferWorker(
         }
 
         return@withContext runCatching {
-            val jsch    = JSch()
-            val session = jsch.getSession(user, host, port)
-            @Suppress("DEPRECATION")
-            session.setPassword(pass)
-            session.setConfig("StrictHostKeyChecking", "no")
-            session.connect(10000)
+            val session = SshSessionManager.getOrCreateSession(
+                host, port, user, pass, privateKey, keyPass, 10000
+            )
 
             var actualRemotePath = remotePath
             var tempArchivePath: String? = null
@@ -121,8 +120,6 @@ class FileTransferWorker(
                 while (!rmExec.isClosed) { Thread.sleep(100) }
                 rmExec.disconnect()
             }
-
-            session.disconnect()
 
             NotificationHelper.updateProgress(applicationContext, notifId, "Done: $fileName", 100, isDone = true)
         }.fold(

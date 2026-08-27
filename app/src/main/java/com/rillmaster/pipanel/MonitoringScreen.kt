@@ -1,6 +1,10 @@
 package com.rillmaster.pipanel
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import com.rillmaster.pipanel.model.SystemStats
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -211,17 +215,18 @@ suspend fun fetchExtendedStats(settings: SettingsManager, context: android.conte
 @Composable
 fun SparklineChart(
     modifier: Modifier = Modifier,
-    values  : List<Float>,
+    values  : List<Pair<Float, Float>>,
     color   : Color,
     maxValue: Float = 100f,
 ) {
     val modelProducer = remember { CartesianChartModelProducer() }
-
-    // Alimente le modèle Vico à chaque nouveau relevé (défilement animé par Vico)
+    val lastX = values.lastOrNull()?.first ?: 0f
+    
+    // Alimente le modèle Vico à chaque nouveau relevé
     LaunchedEffect(values) {
         if (values.size >= 2) {
             modelProducer.runTransaction {
-                lineModel { series(List(values.size) { it }, values) }
+                lineModel { series(values.map { it.first }, values.map { it.second }) }
             }
         }
     }
@@ -238,6 +243,9 @@ fun SparklineChart(
                     )
                 ),
                 rangeProvider = CartesianLayerRangeProvider.fixed(
+                    minX = values.firstOrNull()?.first?.toDouble() ?: 0.0,
+                    maxX = (values.lastOrNull()?.first?.toDouble() ?: 0.0)
+                        .coerceAtLeast(1.0), // évite un range nul avec un seul point
                     minY = 0.0,
                     maxY = maxValue.toDouble()
                 )
@@ -258,68 +266,71 @@ fun SparklineChart(
 @Composable
 fun ChartCard(
     title   : String,
-    values  : List<Float>,
+    values  : List<Pair<Float, Float>>,
     color   : Color,
     maxValue: Float = 100f,
     unit    : String = "%"
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier            = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                title, 
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp)
+    AnimatedEntrance {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier            = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(
-                    modifier            = Modifier
-                        .width(34.dp)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                    horizontalAlignment = Alignment.End
+                Text(
+                    title, 
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
                 ) {
-                    Text(
-                        "${maxValue.toInt()}$unit",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "0$unit",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Column(
+                        modifier            = Modifier
+                            .width(34.dp)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.SpaceBetween,
+                        horizontalAlignment = Alignment.End
+                    ) {
+                        Text(
+                            "${maxValue.toInt()}$unit",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "0$unit",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    SparklineChart(
+                        values   = values,
+                        color    = color,
+                        maxValue = maxValue,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
                     )
                 }
-                Spacer(Modifier.width(6.dp))
-                SparklineChart(
-                    values   = values,
-                    color    = color,
-                    maxValue = maxValue,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-            }
 
-            // FIX : formater le nombre séparément puis concaténer l'unité
-            // pour éviter UnknownFormatConversionException quand unit="%"
-            if (values.isNotEmpty()) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Row(
-                    modifier              = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    MiniStat(stringResource(R.string.stat_min), "${"%.0f".format(values.min())}$unit",              Color(0xFF66BB6A))
-                    MiniStat(stringResource(R.string.stat_avg), "${"%.0f".format(values.average().toFloat())}$unit", color)
-                    MiniStat(stringResource(R.string.stat_max), "${"%.0f".format(values.max())}$unit",              Color(0xFFEF5350))
+                // FIX : formater le nombre séparément puis concaténer l'unité
+                // pour éviter UnknownFormatConversionException quand unit="%"
+                if (values.isNotEmpty()) {
+                    val yValues = values.map { it.second }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        MiniStat(stringResource(R.string.stat_min), "${"%.0f".format(yValues.minOrNull() ?: 0f)}$unit",              Color(0xFF66BB6A))
+                        MiniStat(stringResource(R.string.stat_avg), "${"%.0f".format(yValues.average().toFloat())}$unit", color)
+                        MiniStat(stringResource(R.string.stat_max), "${"%.0f".format(yValues.maxOrNull() ?: 0f)}$unit",              Color(0xFFEF5350))
+                    }
                 }
             }
         }
@@ -328,31 +339,33 @@ fun ChartCard(
 
 @Composable
 fun NetworkCard(rxSpeed: Long, txSpeed: Long) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+    AnimatedEntrance {
+        Card(
+            modifier = Modifier.fillMaxWidth().animateContentSize(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Default.Speed, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                Text(
-                    "Network Speed", 
-                    style = MaterialTheme.typography.titleMedium, 
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                MiniStat("Download", formatSpeed(rxSpeed), Color(0xFF4CAF50))
-                MiniStat("Upload", formatSpeed(txSpeed), Color(0xFF2196F3))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Speed, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                    Text(
+                        "Network Speed", 
+                        style = MaterialTheme.typography.titleMedium, 
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    MiniStat("Download", formatSpeed(rxSpeed), Color(0xFF4CAF50))
+                    MiniStat("Upload", formatSpeed(txSpeed), Color(0xFF2196F3))
+                }
             }
         }
     }
@@ -394,6 +407,12 @@ fun DiskBar(disk: DiskPartition) {
         "$this ${stringResource(R.string.unit_mb)}"
     }
 
+    val animatedProgress by animateFloatAsState(
+        targetValue = (disk.usedPercent / 100f).coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 800, easing = LinearOutSlowInEasing),
+        label = "disk_progress"
+    )
+
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             disk.mountPoint,
@@ -425,7 +444,7 @@ fun DiskBar(disk: DiskPartition) {
             )
         }
         LinearProgressIndicator(
-            progress   = { (disk.usedPercent / 100f).coerceIn(0f, 1f) },
+            progress   = { animatedProgress },
             modifier   = Modifier.fillMaxWidth().height(8.dp),
             color      = barColor,
             trackColor = MaterialTheme.colorScheme.surfaceVariant
@@ -445,9 +464,10 @@ fun MonitoringScreen(
     showNavigationIcon: Boolean = true,
     isWide: Boolean = false
 ) {
-    val cpuHistory  = remember { mutableStateListOf<Float>() }
-    val ramHistory  = remember { mutableStateListOf<Float>() }
-    val tempHistory = remember { mutableStateListOf<Float>() }
+    val cpuHistory  = remember { mutableStateListOf<Pair<Float, Float>>() }
+    val ramHistory  = remember { mutableStateListOf<Pair<Float, Float>>() }
+    val tempHistory = remember { mutableStateListOf<Pair<Float, Float>>() }
+    var xCounter by remember { mutableFloatStateOf(0f) }
 
     var current by remember { mutableStateOf<ExtendedStats?>(null) }
     var loading by remember { mutableStateOf(value = true) }
@@ -484,13 +504,14 @@ fun MonitoringScreen(
 
                 fun <T> MutableList<T>.push(v: T) { add(v); if (size > MAX_HISTORY) removeAt(0) }
 
-                cpuHistory .push(stats.base.cpuPercent.toFloat())
+                cpuHistory .push(xCounter to stats.base.cpuPercent.toFloat())
                 ramHistory .push(
-                    if (stats.base.ramTotalMb > 0)
+                    xCounter to (if (stats.base.ramTotalMb > 0)
                         stats.base.ramUsedMb.toFloat() / stats.base.ramTotalMb * 100f
-                    else 0f
+                    else 0f)
                 )
-                tempHistory.push(stats.base.tempCelsius.toFloat())
+                tempHistory.push(xCounter to stats.base.tempCelsius.toFloat())
+                xCounter += 1f
             } else {
                 loading = false
                 error   = (current == null)
@@ -634,20 +655,26 @@ fun MonitoringScreen(
                     // ── Disques ──────────────────────────────────────────────────
                     val disks = current?.disks
                     if (!disks.isNullOrEmpty()) {
-                        Card(
-                            modifier = itemModifier,
-                            shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        ) {
-                            Column(
-                                modifier            = Modifier.padding(20.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                        AnimatedEntrance {
+                            Card(
+                                modifier = itemModifier.animateContentSize(),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Icon(Icons.Filled.Storage, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                    Text(stringResource(R.string.storage_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Column(
+                                    modifier            = Modifier.padding(20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Icon(Icons.Filled.Storage, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                        Text(stringResource(R.string.storage_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    }
+                                    disks.forEachIndexed { index, disk ->
+                                        AnimatedEntrance(delayMillis = index * 50) {
+                                            DiskBar(disk)
+                                        }
+                                    }
                                 }
-                                disks.forEach { DiskBar(it) }
                             }
                         }
                     }

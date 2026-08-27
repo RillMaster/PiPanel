@@ -34,7 +34,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
+import com.rillmaster.pipanel.ui.screens.WireGuardEditorScreen
+import com.rillmaster.pipanel.vpn.WgTunnelManager
+import com.wireguard.android.backend.GoBackend
+import com.wireguard.android.backend.Tunnel
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.FragmentActivity
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,7 +57,7 @@ private const val WG_PLAY    = "market://details?id=$WG_PACKAGE"
 private enum class OnboardingStep {
     WELCOME,
     NETWORK,
-    WIREGUARD,
+    WG_EDITOR,
     SSH_CONFIG,
     TEST,
     DONE
@@ -76,14 +84,16 @@ fun OnboardingScreen(
 
     val scope   = rememberCoroutineScope()
     val context = LocalContext.current
+    val vpnManager = PiPanelApp.instance.vpnManager
 
-    val currentDot = when (step) {
-        OnboardingStep.WELCOME    -> 0
-        OnboardingStep.NETWORK,
-        OnboardingStep.WIREGUARD  -> 1
-        OnboardingStep.SSH_CONFIG -> 2
-        OnboardingStep.TEST       -> 3
-        OnboardingStep.DONE       -> 4
+    // Launcher pour la permission VPN
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        // On relance le test une fois la permission accordée
+        if (step == OnboardingStep.TEST) {
+            testState = TestState.Idle
+        }
     }
 
     // ✅ FIX THÈME : Box avec background du thème pour couvrir tout l'écran
@@ -92,103 +102,130 @@ fun OnboardingScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(Modifier.height(32.dp))
+        AnimatedContent(
+            targetState = step,
+            transitionSpec = {
+                (slideInHorizontally { it } + fadeIn()) togetherWith
+                        (slideOutHorizontally { -it } + fadeOut())
+            },
+            label = "onboarding"
+        ) { currentStep ->
+            if (currentStep == OnboardingStep.WG_EDITOR) {
+                WireGuardEditorScreen(
+                    settings = settings,
+                    onBack = { step = OnboardingStep.NETWORK },
+                    onSave = { step = OnboardingStep.SSH_CONFIG }
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Spacer(Modifier.height(32.dp))
 
-            StepIndicator(current = currentDot, total = 5)
+                    val currentDot = when (currentStep) {
+                        OnboardingStep.WELCOME    -> 0
+                        OnboardingStep.NETWORK    -> 1
+                        OnboardingStep.WG_EDITOR  -> 2
+                        OnboardingStep.SSH_CONFIG -> 3
+                        OnboardingStep.TEST       -> 4
+                        OnboardingStep.DONE       -> 5
+                    }
+                    StepIndicator(current = currentDot, total = 6)
 
-            Spacer(Modifier.height(32.dp))
+                    Spacer(Modifier.height(32.dp))
 
-            AnimatedContent(
-                targetState = step,
-                transitionSpec = {
-                    (slideInHorizontally { it } + fadeIn()) togetherWith
-                            (slideOutHorizontally { -it } + fadeOut())
-                },
-                label = "onboarding"
-            ) { currentStep ->
-                when (currentStep) {
+                    when (currentStep) {
+                        OnboardingStep.WELCOME -> WelcomeStep { step = OnboardingStep.NETWORK }
 
-                    OnboardingStep.WELCOME -> WelcomeStep { step = OnboardingStep.NETWORK }
-
-                    OnboardingStep.NETWORK -> NetworkStep(
-                        useWireGuard = useWireGuard,
-                        onToggleWg   = { useWireGuard = it },
-                        onBack       = { step = OnboardingStep.WELCOME },
-                        onNext       = {
-                            step = if (useWireGuard) OnboardingStep.WIREGUARD
-                            else              OnboardingStep.SSH_CONFIG
-                        }
-                    )
-
-                    OnboardingStep.WIREGUARD -> WireGuardStep(
-                        onBack   = { step = OnboardingStep.NETWORK },
-                        onNext   = { step = OnboardingStep.SSH_CONFIG },
-                        onOpenWg = {
-                            val launchIntent = context.packageManager
-                                .getLaunchIntentForPackage(WG_PACKAGE)
-                            if (launchIntent != null) context.startActivity(launchIntent)
-                            else context.startActivity(Intent(Intent.ACTION_VIEW, WG_PLAY.toUri()))
-                        }
-                    )
-
-                    OnboardingStep.SSH_CONFIG -> SshConfigStep(
-                        host     = host,     onHostChange     = { host     = it },
-                        port     = port,     onPortChange     = { port     = it },
-                        username = username, onUsernameChange = { username = it },
-                        password = password, onPasswordChange = { password = it },
-                        onBack   = {
-                            step = if (useWireGuard) OnboardingStep.WIREGUARD
-                            else OnboardingStep.NETWORK
-                        },
-                        onNext = {
-                            settings.host     = host
-                            settings.port     = port.toIntOrNull() ?: 22
-                            settings.username = username
-                            settings.password = password
-                            testState         = TestState.Idle
-                            step              = OnboardingStep.TEST
-                        }
-                    )
-
-                    OnboardingStep.TEST -> TestStep(
-                        state       = testState,
-                        onStartTest = {
-                            testState = TestState.Loading
-                            scope.launch {
-                                val result = SshClient.execute(
-                                    host     = settings.host,
-                                    port     = settings.port,
-                                    user     = settings.username,
-                                    password = settings.password,
-                                    command  = "echo __ok__",
-                                    context  = context
-                                )
-                                testState = if (result.contains("__ok__")) TestState.Success
-                                else TestState.Error(result)
+                        OnboardingStep.NETWORK -> NetworkStep(
+                            useWireGuard = useWireGuard,
+                            onToggleWg   = { useWireGuard = it },
+                            onBack       = { step = OnboardingStep.WELCOME },
+                            onNext       = {
+                                step = if (useWireGuard) OnboardingStep.WG_EDITOR
+                                else              OnboardingStep.SSH_CONFIG
                             }
-                        },
-                        onBack = { step = OnboardingStep.SSH_CONFIG },
-                        onNext = { step = OnboardingStep.DONE }
-                    )
+                        )
 
-                    OnboardingStep.DONE -> DoneStep(
-                        onFinish = {
-                            settings.isFirstLaunch = false
-                            onFinished()
-                        }
-                    )
+                        OnboardingStep.SSH_CONFIG -> SshConfigStep(
+                            host     = host,     onHostChange     = { host     = it },
+                            port     = port,     onPortChange     = { port     = it },
+                            username = username, onUsernameChange = { username = it },
+                            password = password, onPasswordChange = { password = it },
+                            onBack   = {
+                                step = if (useWireGuard) OnboardingStep.WG_EDITOR
+                                else OnboardingStep.NETWORK
+                            },
+                            onNext = {
+                                settings.host     = host
+                                settings.port     = port.toIntOrNull() ?: 22
+                                settings.username = username
+                                settings.password = password
+                                testState         = TestState.Idle
+                                step              = OnboardingStep.TEST
+                            }
+                        )
+
+                        OnboardingStep.TEST -> TestStep(
+                            state       = testState,
+                            useWireGuard = useWireGuard,
+                            onStartTest = {
+                                scope.launch {
+                                    if (useWireGuard && settings.vpnConfig.isNotBlank()) {
+                                        val vpnIntent = GoBackend.VpnService.prepare(context)
+                                        if (vpnIntent != null) {
+                                            vpnPermissionLauncher.launch(vpnIntent)
+                                            return@launch
+                                        }
+
+                                        testState = TestState.VpnConnecting
+                                        try {
+                                            vpnManager.startTunnel(settings.vpnConfig)
+                                            delay(3000) // Attendre que le tunnel s'établisse (plus long pour la 4G/5G)
+                                        } catch (e: Exception) {
+                                            testState = TestState.Error("VPN: ${e.message}")
+                                            return@launch
+                                        }
+                                    }
+
+                                    testState = TestState.Loading
+                                    val result = SshClient.execute(
+                                        host     = settings.host,
+                                        port     = settings.port,
+                                        user     = settings.username,
+                                        password = settings.password,
+                                        command  = "echo __ok__",
+                                        context  = context
+                                    )
+                                    testState = if (result.contains("__ok__")) TestState.Success
+                                    else TestState.Error(result)
+                                }
+                            },
+                            onBack = { 
+                                scope.launch { vpnManager.stopTunnel() }
+                                step = OnboardingStep.SSH_CONFIG 
+                            },
+                            onNext = { step = OnboardingStep.DONE }
+                        )
+
+                        OnboardingStep.DONE -> DoneStep(
+                            onFinish = {
+                                settings.isFirstLaunch = false
+                                onFinished()
+                            }
+                        )
+
+                        else -> {}
+                    }
+
+                    Spacer(Modifier.height(40.dp))
                 }
             }
-
-            Spacer(Modifier.height(40.dp))
         }
     }
 }
@@ -221,9 +258,10 @@ private fun StepIndicator(current: Int, @Suppress("SameParameterValue") total: I
 // État du test de connexion
 // ─────────────────────────────────────────────────────────────────────────────
 private sealed class TestState {
-    object Idle    : TestState()
-    object Loading : TestState()
-    object Success : TestState()
+    object Idle          : TestState()
+    object VpnConnecting : TestState()
+    object Loading       : TestState()
+    object Success       : TestState()
     data class Error(val message: String) : TestState()
 }
 
@@ -414,71 +452,6 @@ private fun NetworkOptionCard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ÉTAPE 1b — WireGuard
-// ─────────────────────────────────────────────────────────────────────────────
-@Composable
-private fun WireGuardStep(
-    onBack  : () -> Unit,
-    onNext  : () -> Unit,
-    onOpenWg: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        StepHeader(step = stringResource(R.string.onboarding_step_1_4_vpn), title = stringResource(R.string.onboarding_wg_config_title))
-
-        Text(
-            text  = stringResource(R.string.onboarding_wg_config_desc),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(R.string.onboarding_wg_rpi_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary)
-                Text(
-                    text       = "sudo apt install wireguard\nwg genkey | tee priv | wg pubkey > pub",
-                    fontFamily = FontFamily.Monospace,
-                    style      = MaterialTheme.typography.bodySmall,
-                    color      = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(R.string.onboarding_wg_phone_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary)
-                Text(
-                    text  = stringResource(R.string.onboarding_wg_phone_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Button(
-            onClick  = onOpenWg,
-            modifier = Modifier.fillMaxWidth(),
-            colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF88171A))
-        ) {
-            Text(stringResource(R.string.onboarding_wg_open_action))
-        }
-
-        Text(
-            text      = stringResource(R.string.onboarding_wg_play_store_info),
-            style     = MaterialTheme.typography.bodySmall,
-            color     = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier  = Modifier.fillMaxWidth()
-        )
-
-        NavigationButtons(onBack = onBack, onNext = onNext, nextLabel = stringResource(R.string.onboarding_wg_next_label))
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // ÉTAPE 2 — Config SSH
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
@@ -551,6 +524,7 @@ private fun SshConfigStep(
 @Composable
 private fun TestStep(
     state      : TestState,
+    useWireGuard: Boolean = false,
     onStartTest: () -> Unit,
     onBack     : () -> Unit,
     onNext     : () -> Unit
@@ -567,10 +541,14 @@ private fun TestStep(
         Spacer(Modifier.height(8.dp))
 
         when (state) {
-            is TestState.Idle, TestState.Loading -> {
+            is TestState.Idle, TestState.VpnConnecting, TestState.Loading -> {
                 CircularProgressIndicator(modifier = Modifier.size(56.dp))
-                Text(stringResource(R.string.onboarding_test_loading), style = MaterialTheme.typography.bodyLarge,
+                val mainText = if (state is TestState.VpnConnecting) "Connexion au VPN..." 
+                              else stringResource(R.string.onboarding_test_loading)
+                
+                Text(mainText, style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                
                 Text(stringResource(R.string.onboarding_test_attempt),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -613,10 +591,21 @@ private fun TestStep(
                     modifier = Modifier.fillMaxWidth(),
                     colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                 ) {
-                    Text(text = state.message, modifier = Modifier.padding(14.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onErrorContainer)
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(text = state.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onErrorContainer)
+                        
+                        if (useWireGuard) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.2f))
+                            Text(
+                                "💡 Astuce WireGuard : Vérifiez que l'adresse 'Host' de votre Pi est bien son IP VPN (ex: 10.0.0.1) et que votre téléphone a une IP différente de votre PC.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.onboarding_modify)) }

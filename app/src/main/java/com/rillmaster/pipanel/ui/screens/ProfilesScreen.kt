@@ -1,11 +1,13 @@
 @file:Suppress("SpellCheckingInspection")
 package com.rillmaster.pipanel.ui.screens
 
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -75,22 +77,24 @@ fun ProfilesScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(profiles) { profile ->
-                    ProfileItem(
-                        profile = profile,
-                        isActive = profile.id == currentId,
-                        onSelect = {
-                            settings.currentProfileId = profile.id
-                            currentId = profile.id
-                            onClose()
-                        },
-                        onEdit = { profileToEdit = profile },
-                        onDelete = {
-                            settings.deleteProfile(profile.id)
-                            profiles = settings.profiles
-                            currentId = settings.currentProfileId
-                        }
-                    )
+                itemsIndexed(profiles) { index, profile ->
+                    AnimatedEntrance(delayMillis = index * 50) {
+                        ProfileItem(
+                            profile = profile,
+                            isActive = profile.id == currentId,
+                            onSelect = {
+                                settings.currentProfileId = profile.id
+                                currentId = profile.id
+                                onClose()
+                            },
+                            onEdit = { profileToEdit = profile },
+                            onDelete = {
+                                settings.deleteProfile(profile.id)
+                                profiles = settings.profiles
+                                currentId = settings.currentProfileId
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -137,7 +141,7 @@ fun ProfileItem(
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onSelect() },
+        modifier = Modifier.fillMaxWidth().animateContentSize().clickable { onSelect() },
         colors = CardDefaults.cardColors(
             containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
         ),

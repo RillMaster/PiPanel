@@ -13,5 +13,9 @@ data class MetricEntity(
     val tempCelsius: Double,
     val cpuPercent: Int,
     val ramUsedMb: Int,
-    val ramTotalMb: Int
+    val ramTotalMb: Int,
+    val diskReadBytes: Long = 0L,
+    val diskWriteBytes: Long = 0L,
+    val netRxBytes: Long = 0L,
+    val netTxBytes: Long = 0L
 )

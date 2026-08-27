@@ -1,6 +1,7 @@
 package com.rillmaster.pipanel
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -231,60 +233,66 @@ fun DockerScreen(
                     if (fetchError == null) {
                         val running = containers.count { it.isRunning }
                         val stopped = containers.size - running
-                        Row(
-                            modifier              = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                        SummaryChip(
-                                label    = pluralStringResource(R.plurals.docker_active_count, running, running),
-                                icon     = Icons.Default.CheckCircle,
-                                color    = Color(0xFF4CAF50),
-                                modifier = Modifier.weight(1f)
-                            )
-                            SummaryChip(
-                                label    = pluralStringResource(R.plurals.docker_stopped_count, stopped, stopped),
-                                icon     = Icons.Default.PauseCircle,
-                                color    = Color(0xFFF44336),
-                                modifier = Modifier.weight(1f)
-                            )
+                        AnimatedEntrance {
+                            Row(
+                                modifier              = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                SummaryChip(
+                                    label    = pluralStringResource(R.plurals.docker_active_count, running, running),
+                                    icon     = Icons.Default.CheckCircle,
+                                    color    = Color(0xFF4CAF50),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                SummaryChip(
+                                    label    = pluralStringResource(R.plurals.docker_stopped_count, stopped, stopped),
+                                    icon     = Icons.Default.PauseCircle,
+                                    color    = Color(0xFFF44336),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
 
                     // ── Résultat de la dernière action ────────────────────────────────
                     actionResult?.let { msg ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier              = Modifier.padding(12.dp),
-                                verticalAlignment     = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        AnimatedEntrance {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
                             ) {
-                                Text(
-                                    text       = msg,
-                                    style      = MaterialTheme.typography.labelSmall,
-                                    modifier   = Modifier.weight(1f),
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                IconButton(onClick = { actionResult = null }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
+                                Row(
+                                    modifier              = Modifier.padding(12.dp),
+                                    verticalAlignment     = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text       = msg,
+                                        style      = MaterialTheme.typography.labelSmall,
+                                        modifier   = Modifier.weight(1f),
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    IconButton(onClick = { actionResult = null }, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
+                                    }
                                 }
                             }
                         }
                     }
 
                     // ── Liste des containers ──────────────────────────────────────────
-                    containers.forEach { container ->
-                        ContainerCard(
-                            container     = container,
-                            loadingAction = actionLoading[container.name],
-                            onStart       = { runAction(container, "start") },
-                            onStop        = { runAction(container, "stop") },
-                            onRestart     = { runAction(container, "restart") },
-                            onLogs        = { selectedLogContainer = container }
-                        )
+                    containers.forEachIndexed { index, container ->
+                        AnimatedEntrance(delayMillis = 100 + (index * 50)) {
+                            ContainerCard(
+                                container     = container,
+                                loadingAction = actionLoading[container.name],
+                                onStart       = { runAction(container, "start") },
+                                onStop        = { runAction(container, "stop") },
+                                onRestart     = { runAction(container, "restart") },
+                                onLogs        = { selectedLogContainer = container }
+                            )
+                        }
                     }
                     
                     Spacer(Modifier.height(32.dp))
@@ -424,14 +432,20 @@ private fun ContainerCard(
 
 @Composable
 private fun StatInfo(label: String, value: String, color: Color, modifier: Modifier) {
+    val targetProgress = try { value.removeSuffix("%").toFloat() / 100f } catch(_: Exception) { 0f }
+    val animatedProgress by animateFloatAsState(
+        targetValue = targetProgress.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 800, easing = LinearOutSlowInEasing),
+        label = "docker_stat_progress"
+    )
+
     Column(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = color)
         }
-        val progress = try { value.removeSuffix("%").toFloat() / 100f } catch(_: Exception) { 0f }
         LinearProgressIndicator(
-            progress = { progress.coerceIn(0f, 1f) },
+            progress = { animatedProgress },
             modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
             color = color,
             trackColor = color.copy(alpha = 0.1f)

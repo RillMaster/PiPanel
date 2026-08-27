@@ -1,8 +1,10 @@
 package com.rillmaster.pipanel
 
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -218,33 +220,37 @@ fun Fail2BanScreen(
 
                     if (bannedIps.isEmpty()) {
                         item {
-                            Text(
-                                text = if (selectedJail != null) stringResource(R.string.label_no_ips_banned) else stringResource(R.string.label_select_jail_first),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            AnimatedEntrance {
+                                Text(
+                                    text = if (selectedJail != null) stringResource(R.string.label_no_ips_banned) else stringResource(R.string.label_select_jail_first),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     } else {
-                        items(bannedIps) { ip ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                        itemsIndexed(bannedIps) { index, ip ->
+                            AnimatedEntrance(delayMillis = index * 50) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().animateContentSize(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f))
                                 ) {
-                                    Icon(Icons.Default.Block, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Text(
-                                        ip, 
-                                        modifier = Modifier.weight(1f), 
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    IconButton(onClick = { unbanIp(ip) }) {
-                                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.action_unban), tint = MaterialTheme.colorScheme.error)
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Block, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Text(
+                                            ip, 
+                                            modifier = Modifier.weight(1f), 
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        IconButton(onClick = { unbanIp(ip) }) {
+                                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.action_unban), tint = MaterialTheme.colorScheme.error)
+                                        }
                                     }
                                 }
                             }

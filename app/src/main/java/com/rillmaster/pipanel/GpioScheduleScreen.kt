@@ -1,9 +1,11 @@
 package com.rillmaster.pipanel
 
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -156,32 +158,34 @@ fun GpioScheduleScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(schedules, key = { it.id }) { schedule ->
-                    ScheduleCard(
-                        schedule = schedule,
-                        onToggle = { enabled ->
-                            scope.launch {
-                                val updated = schedules.map {
-                                    if (it.id == schedule.id) it.copy(enabled = enabled) else it
+                itemsIndexed(schedules, key = { _, it -> it.id }) { index, schedule ->
+                    AnimatedEntrance(delayMillis = index * 50) {
+                        ScheduleCard(
+                            schedule = schedule,
+                            onToggle = { enabled ->
+                                scope.launch {
+                                    val updated = schedules.map {
+                                        if (it.id == schedule.id) it.copy(enabled = enabled) else it
+                                    }
+                                    schedules = updated
+                                    settings.gpioSchedules = updated
+                                    applyCrontab(settings, updated.filter { it.enabled })
+                                    snackbarHostState.showSnackbar(
+                                        if (enabled) context.getString(R.string.rule_enabled) else context.getString(R.string.rule_disabled)
+                                    )
                                 }
-                                schedules = updated
-                                settings.gpioSchedules = updated
-                                applyCrontab(settings, updated.filter { it.enabled })
-                                snackbarHostState.showSnackbar(
-                                    if (enabled) context.getString(R.string.rule_enabled) else context.getString(R.string.rule_disabled)
-                                )
+                            },
+                            onDelete = {
+                                scope.launch {
+                                    val updated = schedules.filter { it.id != schedule.id }
+                                    schedules = updated
+                                    settings.gpioSchedules = updated
+                                    applyCrontab(settings, updated.filter { it.enabled })
+                                    snackbarHostState.showSnackbar(context.getString(R.string.rule_deleted))
+                                }
                             }
-                        },
-                        onDelete = {
-                            scope.launch {
-                                val updated = schedules.filter { it.id != schedule.id }
-                                schedules = updated
-                                settings.gpioSchedules = updated
-                                applyCrontab(settings, updated.filter { it.enabled })
-                                snackbarHostState.showSnackbar(context.getString(R.string.rule_deleted))
-                            }
-                        }
-                    )
+                        )
+                    }
                 }
                 item { Spacer(Modifier.height(80.dp)) }
             }
@@ -220,7 +224,7 @@ private fun ScheduleCard(
     val actionColor = if (schedule.action == PinAction.ON) Color(0xFF4CAF50) else Color(0xFFF44336)
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
         shape    = RoundedCornerShape(14.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors   = CardDefaults.cardColors(

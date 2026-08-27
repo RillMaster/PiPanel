@@ -9,11 +9,13 @@ import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.SftpException
+import com.rillmaster.pipanel.ssh.SshSessionManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.io.FilterInputStream
 import java.io.InputStream
 import java.io.OutputStream
-import java.util.Vector
 
 class ShellSession(
     private val session: Session,
@@ -49,7 +51,7 @@ class ShellSession(
 
     fun close() {
         runCatching { channel.disconnect() }
-        runCatching { session.disconnect() }
+        // On ne déconnecte plus la session ici, elle est gérée par SshSessionManager
     }
 }
 
@@ -100,40 +102,6 @@ object SshClient {
         }
     }
 
-    /**
-     * Crée une session JSch authentifiée — par clé privée si fournie,
-     * sinon par mot de passe.
-     */
-    private fun createSession(
-        jsch: JSch,
-        user: String,
-        host: String,
-        port: Int,
-        password: String,
-        privateKey: String = "",
-        keyPassphrase: String = ""
-    ): Session {
-        if (privateKey.isNotBlank()) {
-            jsch.addIdentity(
-                "pipanel_key",
-                privateKey.toByteArray(Charsets.UTF_8),
-                null,
-                if (keyPassphrase.isBlank()) null else keyPassphrase.toByteArray(Charsets.UTF_8)
-            )
-        }
-        val session = jsch.getSession(user, host, port)
-        if (privateKey.isBlank()) {
-            @Suppress("DEPRECATION")
-            session.setPassword(password)
-        }
-        session.setConfig("StrictHostKeyChecking", "no")
-        // Auth par clé uniquement si clé présente (évite les prompts interactifs)
-        if (privateKey.isNotBlank()) {
-            session.setConfig("PreferredAuthentications", "publickey")
-        }
-        return session
-    }
-
     // ─── Exécution d'une commande unique ─────────────────────────────────────────
     suspend fun execute(
         host: String,
@@ -146,13 +114,11 @@ object SshClient {
         privateKey: String = "",
         keyPassphrase: String = ""
     ): String = withContext(Dispatchers.IO) {
-        android.util.Log.e("SSH", "SSH: Tentative connexion $host:$port ($user)...")
         try {
-            val jsch = JSch()
-            val session = createSession(jsch, user, host, port, password, privateKey, keyPassphrase)
-            session.connect(timeoutMs)
+            val session = SshSessionManager.getOrCreateSession(
+                host, port, user, password, privateKey, keyPassphrase, timeoutMs
+            )
 
-            android.util.Log.e("SSH", "SSH: Connecté ! Exécution: ${command.take(60)}...")
             val channel = session.openChannel("exec") as ChannelExec
             channel.setCommand(command)
             val stdout = channel.inputStream
@@ -173,15 +139,11 @@ object SshClient {
                     if (n > 0) output.append("[err] ${String(buffer, 0, n, Charsets.UTF_8)}")
                 }
                 if ((channel.isClosed) && (stdout.available() == 0)) break
-                Thread.sleep(100)
+                delay(100)
             }
 
             channel.disconnect()
-            session.disconnect()
-
-            val result = output.toString().trim()
-            android.util.Log.e("SSH", "SSH: Terminé. Sortie=${if (result.length > 50) result.take(50) + "..." else result}")
-            result
+            output.toString().trim()
 
         } catch (e: Exception) {
             val errorMsg = context?.let { parseError(it, e) } ?: (e.message ?: "SSH Error")
@@ -197,23 +159,25 @@ object SshClient {
         user: String,
         password: String,
         privateKey: String = "",
-        keyPassphrase: String = ""
+        keyPassphrase: String = "",
+        initialCols: Int = 80,
+        initialRows: Int = 24
     ): Result<ShellSession> = withContext(Dispatchers.IO) {
         runCatching {
-            val jsch = JSch()
-            val session = createSession(jsch, user, host, port, password, privateKey, keyPassphrase)
-            session.setServerAliveInterval(30000)
-            session.connect(8000)
+            val session = SshSessionManager.getOrCreateSession(
+                host, port, user, password, privateKey, keyPassphrase, 8000
+            )
 
             val channel = session.openChannel("shell") as ChannelShell
             channel.setPtyType("xterm")
-            channel.setPtySize(80, 24, 0, 0)
+            channel.setPtySize(initialCols, initialRows, 0, 0)
+            
+            // S'assurer que le Keep-Alive est configuré sur la session parente
+            session.setServerAliveInterval(30000)
+            session.setServerAliveCountMax(3)
 
             val ins = channel.inputStream
             val outs = channel.outputStream
-            
-            session.setServerAliveInterval(30000)
-            session.setServerAliveCountMax(3)
             
             channel.connect(10000)
 
@@ -226,15 +190,12 @@ object SshClient {
         settings: SettingsManager,
         action: suspend (ChannelSftp) -> T
     ): Result<T> = withContext(Dispatchers.IO) {
-        var session: Session? = null
         var channel: ChannelSftp? = null
         try {
-            val jsch = JSch()
-            session = createSession(
-                jsch, settings.username, settings.host, settings.port,
-                settings.password, settings.privateKey, settings.keyPassphrase
+            val session = SshSessionManager.getOrCreateSession(
+                settings.host, settings.port, settings.username, settings.password,
+                settings.privateKey, settings.keyPassphrase, 8000
             )
-            session.connect(8000)
 
             channel = session.openChannel("sftp") as ChannelSftp
             channel.connect()
@@ -244,7 +205,6 @@ object SshClient {
             Result.failure(e)
         } finally {
             channel?.disconnect()
-            session?.disconnect()
         }
     }
 
@@ -253,23 +213,20 @@ object SshClient {
      */
     suspend fun getInputStream(settings: SettingsManager, remotePath: String): Result<InputStream> = withContext(Dispatchers.IO) {
         try {
-            val jsch = JSch()
-            val session = createSession(
-                jsch, settings.username, settings.host, settings.port,
-                settings.password, settings.privateKey, settings.keyPassphrase
+            val session = SshSessionManager.getOrCreateSession(
+                settings.host, settings.port, settings.username, settings.password,
+                settings.privateKey, settings.keyPassphrase, 8000
             )
-            session.connect(8000)
 
             val channel = session.openChannel("sftp") as ChannelSftp
             channel.connect()
 
             val stream = channel.get(remotePath)
-            // On renvoie un InputStream qui fermera la session SFTP à la fermeture
-            val wrappedStream = object : java.io.FilterInputStream(stream) {
+            // On renvoie un InputStream qui fermera le canal SFTP à la fermeture
+            val wrappedStream = object : FilterInputStream(stream) {
                 override fun close() {
                     super.close()
                     channel.disconnect()
-                    session.disconnect()
                 }
             }
             Result.success(wrappedStream)

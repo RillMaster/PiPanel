@@ -3,11 +3,10 @@ package com.rillmaster.pipanel.ui.viewmodels
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rillmaster.pipanel.R
-import com.rillmaster.pipanel.SettingsManager
-import com.rillmaster.pipanel.ShellSession
-import com.rillmaster.pipanel.SshClient
+import com.rillmaster.pipanel.ssh.SshClient
 import com.rillmaster.pipanel.SshShortcut
+import com.rillmaster.pipanel.managers.ProfileManager
+import com.rillmaster.pipanel.managers.SshKeyManager
 import com.rillmaster.pipanel.ui.terminal.CommandHistory
 import com.rillmaster.pipanel.ui.terminal.TerminalEmulator
 import kotlinx.coroutines.Dispatchers
@@ -30,13 +29,16 @@ data class TerminalUiState(
 )
 
 class TerminalViewModel(
-    private val settings: SettingsManager
+    private val context: Context,
+    private val sshKeyManager: SshKeyManager,
+    private val profileManager: ProfileManager,
+    private val sshClient: SshClient
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TerminalUiState())
     val uiState: StateFlow<TerminalUiState> = _uiState.asStateFlow()
 
-    private var session: ShellSession? = null
+    private var session: SshClient.ShellSession? = null
     val emulator = TerminalEmulator(80, 24)
     val commandHistory = CommandHistory()
 
@@ -45,10 +47,10 @@ class TerminalViewModel(
     }
 
     private fun loadHistory() {
-        val profileId = settings.currentProfileId ?: "default"
-        settings.getCommandHistory(profileId).forEach { commandHistory.add(it) }
+        val profileId = profileManager.currentProfileId ?: "default"
+        profileManager.getCommandHistory(profileId).forEach { commandHistory.add(it) }
     }
-    
+
     private var connectJob: Job? = null
     private var readJob: Job? = null
     private var userClosedManually = false
@@ -66,35 +68,47 @@ class TerminalViewModel(
 
     fun connect(context: Context) {
         userClosedManually = false
-        _uiState.update { it.copy(status = context.getString(R.string.status_connecting)) }
+        disconnectInternal() // Nettoyage complet avant de relancer
+        emulator.fullReset()
+        _uiState.update { it.copy(status = context.getString(com.rillmaster.pipanel.R.string.status_connecting)) }
         connectSsh(context)
     }
 
     fun disconnect() {
         userClosedManually = true
+        disconnectInternal()
+        _uiState.update { it.copy(isConnected = false, isReconnecting = false) }
+    }
+
+    private fun disconnectInternal() {
         connectJob?.cancel()
         readJob?.cancel()
         session?.close()
         session = null
-        _uiState.update { it.copy(isConnected = false, isReconnecting = false) }
     }
 
     private fun connectSsh(context: Context) {
         connectJob?.cancel()
         connectJob = viewModelScope.launch {
-            val result = SshClient.openShell(
-                host = settings.host,
-                port = settings.port,
-                user = settings.username,
-                password = settings.password,
-                privateKey = settings.privateKey,
-                keyPassphrase = settings.keyPassphrase
+            val keyId = profileManager.getCurrentProfile()?.sshKeyId
+            val key = keyId?.let { sshKeyManager.findKeyById(it)?.privateKey } ?: profileManager.privateKey
+            val result = sshClient.openShell(
+                host = profileManager.host,
+                port = profileManager.port,
+                user = profileManager.username,
+                password = profileManager.password,
+                privateKey = key,
+                keyPassphrase = profileManager.keyPassphrase,
+                initialCols = emulator.cols,
+                initialRows = emulator.rows
             )
 
             result.onSuccess { sh ->
                 session = sh
+                // Reset de l'émulateur pour supprimer les messages de handshake/login résiduels
+                emulator.fullReset()
                 _uiState.update { it.copy(
-                    status = context.getString(R.string.status_connected_terminal),
+                    status = context.getString(com.rillmaster.pipanel.R.string.status_connected_terminal),
                     isConnected = true,
                     isReconnecting = false,
                     reconnectAttempt = 0
@@ -105,7 +119,7 @@ class TerminalViewModel(
                 session = null
                 if (!userClosedManually && _uiState.value.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
                     val currentAttempt = _uiState.value.reconnectAttempt + 1
-                    val msg = context.getString(R.string.status_reconnecting, currentAttempt, MAX_RECONNECT_ATTEMPTS)
+                    val msg = context.getString(com.rillmaster.pipanel.R.string.status_reconnecting, currentAttempt, MAX_RECONNECT_ATTEMPTS)
                     emulator.process("\r\n\u001B[33m[ $msg ]\u001B[0m\r\n")
                     _uiState.update { it.copy(
                         isReconnecting = true,
@@ -119,22 +133,22 @@ class TerminalViewModel(
                 } else if (!userClosedManually) {
                     _uiState.update { it.copy(
                         isReconnecting = false,
-                        status = context.getString(R.string.status_error)
+                        status = context.getString(com.rillmaster.pipanel.R.string.status_error)
                     ) }
-                    emulator.process(SshClient.parseError(context, err) + "\r\n")
-                    emulator.process(context.getString(R.string.msg_check_ssh_settings) + "\r\n")
+                    emulator.process(sshClient.parseError(context, err) + "\r\n")
+                    emulator.process(context.getString(com.rillmaster.pipanel.R.string.msg_check_ssh_settings) + "\r\n")
                     _uiState.update { it.copy(renderTick = it.renderTick + 1) }
                 }
             }
         }
     }
 
-    private fun startReading(sh: ShellSession, context: Context) {
+    private fun startReading(sh: SshClient.ShellSession, context: Context) {
         readJob?.cancel()
         readJob = viewModelScope.launch(Dispatchers.IO) {
             val buffer = ByteArray(16384)
             val inputStream = sh.inputStream
-            
+
             while (sh.isConnected) {
                 val n = try { inputStream.read(buffer) } catch (_: Exception) { -1 }
                 if (n < 0) break
@@ -148,27 +162,29 @@ class TerminalViewModel(
             }
 
             withContext(Dispatchers.Main) {
-                _uiState.update { it.copy(isConnected = false) }
-                session = null
-                if (!userClosedManually && _uiState.value.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
-                    _uiState.update { it.copy(
-                        isReconnecting = true,
-                        status = context.getString(R.string.status_reconnecting, it.reconnectAttempt + 1, MAX_RECONNECT_ATTEMPTS)
-                    ) }
-                    val currentAttempt = _uiState.value.reconnectAttempt + 1
-                    delay(getNextDelay(currentAttempt).milliseconds)
-                    if (!userClosedManually) {
-                        _uiState.update { it.copy(reconnectAttempt = currentAttempt) }
-                        connectSsh(context)
+                if (session == sh) { // N'agit que si c'est toujours la session active
+                    _uiState.update { it.copy(isConnected = false) }
+                    session = null
+                    if (!userClosedManually && _uiState.value.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+                        _uiState.update { it.copy(
+                            isReconnecting = true,
+                            status = context.getString(com.rillmaster.pipanel.R.string.status_reconnecting, it.reconnectAttempt + 1, MAX_RECONNECT_ATTEMPTS)
+                        ) }
+                        val currentAttempt = _uiState.value.reconnectAttempt + 1
+                        delay(getNextDelay(currentAttempt).milliseconds)
+                        if (!userClosedManually) {
+                            _uiState.update { it.copy(reconnectAttempt = currentAttempt) }
+                            connectSsh(context)
+                        }
+                    } else if (!userClosedManually) {
+                        val msgReconnFailed = context.getString(com.rillmaster.pipanel.R.string.msg_reconnect_failed, _uiState.value.reconnectAttempt)
+                        _uiState.update { it.copy(
+                            isReconnecting = false,
+                            status = context.getString(com.rillmaster.pipanel.R.string.status_disconnected)
+                        ) }
+                        emulator.process("\r\n\u001B[31m$msgReconnFailed\u001B[0m\r\n")
+                        _uiState.update { it.copy(renderTick = it.renderTick + 1) }
                     }
-                } else {
-                    val msgReconnFailed = context.getString(R.string.msg_reconnect_failed, _uiState.value.reconnectAttempt)
-                    _uiState.update { it.copy(
-                        isReconnecting = false,
-                        status = context.getString(R.string.status_disconnected)
-                    ) }
-                    emulator.process("\r\n\u001B[31m$msgReconnFailed\u001B[0m\r\n")
-                    _uiState.update { it.copy(renderTick = it.renderTick + 1) }
                 }
             }
         }
@@ -186,8 +202,8 @@ class TerminalViewModel(
         val sess = session
         if (command.isNotBlank()) {
             commandHistory.add(command)
-            val profileId = settings.currentProfileId ?: "default"
-            settings.saveCommandHistory(profileId, commandHistory.entries)
+            val profileId = profileManager.currentProfileId ?: "default"
+            profileManager.saveCommandHistory(profileId, commandHistory.entries)
         }
         if (sess != null && _uiState.value.isConnected) {
             viewModelScope.launch { sess.sendRaw(command + "\n") }
@@ -212,7 +228,7 @@ class TerminalViewModel(
         session?.setWindowSize(cols, rows)
         _uiState.update { it.copy(renderTick = it.renderTick + 1) }
     }
-    
+
     override fun onCleared() {
         super.onCleared()
         disconnect()

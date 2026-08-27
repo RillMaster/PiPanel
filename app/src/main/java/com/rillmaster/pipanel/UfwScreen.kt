@@ -1,9 +1,11 @@
 package com.rillmaster.pipanel
 
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -147,22 +149,24 @@ fun UfwScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (status == "active") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+            AnimatedEntrance(delayMillis = 0) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().animateContentSize().padding(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (status == "active") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+                    )
                 ) {
-                    Column {
-                        Text("Firewall Status", style = MaterialTheme.typography.titleSmall)
-                        Text(status.uppercase(), style = MaterialTheme.typography.headlineMedium)
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Firewall Status", style = MaterialTheme.typography.titleSmall)
+                            Text(status.uppercase(), style = MaterialTheme.typography.headlineMedium)
+                        }
+                        Switch(checked = status == "active", onCheckedChange = { toggleUfw() })
                     }
-                    Switch(checked = status == "active", onCheckedChange = { toggleUfw() })
                 }
             }
 
@@ -176,8 +180,10 @@ fun UfwScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(rules) { rule ->
-                        UfwRuleItem(rule = rule, onDelete = { deleteRule(rule.number) })
+                    itemsIndexed(rules) { index, rule ->
+                        AnimatedEntrance(delayMillis = 50 + index * 50) {
+                            UfwRuleItem(rule = rule, onDelete = { deleteRule(rule.number) })
+                        }
                     }
                 }
             }
@@ -200,7 +206,7 @@ data class UfwRule(val number: Int, val to: String, val action: String, val from
 @Composable
 fun UfwRuleItem(rule: UfwRule, onDelete: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
     ) {
         Row(

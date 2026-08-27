@@ -17,7 +17,25 @@ data class PiProfile(
     /** ID de la clé SSH gérée par SshKeyManager. */
     val sshKeyId: String? = null,
     /** Raccourcis SSH spécifiques à ce profil. */
-    val shortcuts: List<SshShortcut>? = null
+    val shortcuts: List<SshShortcut>? = null,
+    /** Clé privée WireGuard locale. */
+    val vpnPrivateKey: String = "",
+    /** Clé publique WireGuard locale. */
+    val vpnPublicKey: String = "",
+    /** Configuration complète WireGuard (client). */
+    val vpnConfig: String = "",
+    
+    // Paramètres détaillés pour l'éditeur
+    val vpnInterfaceAddresses: String = "10.0.0.2/32",
+    val vpnInterfaceListenPort: Int = 0,
+    val vpnInterfaceDns: String = "1.1.1.1",
+    val vpnInterfaceMtu: Int = 0,
+    
+    val vpnPeerPublicKey: String = "",
+    val vpnPeerPresharedKey: String = "",
+    val vpnPeerPersistentKeepalive: Int = 0,
+    val vpnPeerEndpoint: String = "",
+    val vpnPeerAllowedIPs: String = "0.0.0.0/0"
 ) {
     /** True si ce profil utilise une clé SSH plutôt qu'un mot de passe. */
     val useSshKey: Boolean get() = privateKey.isNotBlank() || sshKeyId != null

@@ -1,5 +1,7 @@
 package com.rillmaster.pipanel
 
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -207,9 +209,15 @@ fun SensorDashboardScreen(
         ) {
             PollingStatusBanner(pollingEnabled, pollIntervalSec) { pollIntervalSec = it }
 
-            SensorCard(sensor = ds18b20,  unit = "°C", color = Color(0xFFFF5722))
-            SensorCard(sensor = dht22Tmp, unit = "°C", color = Color(0xFFFF9800))
-            SensorCard(sensor = dht22Hum, unit = "%",  color = Color(0xFF2196F3))
+            AnimatedEntrance(delayMillis = 50) {
+                SensorCard(sensor = ds18b20,  unit = "°C", color = Color(0xFFFF5722))
+            }
+            AnimatedEntrance(delayMillis = 100) {
+                SensorCard(sensor = dht22Tmp, unit = "°C", color = Color(0xFFFF9800))
+            }
+            AnimatedEntrance(delayMillis = 150) {
+                SensorCard(sensor = dht22Hum, unit = "%",  color = Color(0xFF2196F3))
+            }
         }
     }
 }
@@ -283,7 +291,7 @@ private fun SensorCard(
     color : Color
 ) {
     Card(
-        modifier  = Modifier.fillMaxWidth(),
+        modifier  = Modifier.fillMaxWidth().animateContentSize(),
         shape     = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
@@ -478,14 +486,20 @@ fun WiringDiagramScreen(onClose: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // Nouveau Schéma GPIO Complet
-            FullGpioHeaderCard()
+            AnimatedEntrance(delayMillis = 0) {
+                FullGpioHeaderCard()
+            }
 
-            sections.forEach { section ->
-                WiringSectionCard(section)
+            sections.forEachIndexed { index, section ->
+                AnimatedEntrance(delayMillis = 50 + index * 50) {
+                    WiringSectionCard(section)
+                }
             }
 
             // Rappel résistances
-            ResistorReminderCard()
+            AnimatedEntrance(delayMillis = 50 + sections.size * 50) {
+                ResistorReminderCard()
+            }
         }
     }
 }

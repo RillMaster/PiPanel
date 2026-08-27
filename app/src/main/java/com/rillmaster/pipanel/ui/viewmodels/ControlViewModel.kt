@@ -2,9 +2,10 @@ package com.rillmaster.pipanel.ui.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rillmaster.pipanel.SettingsManager
+import com.rillmaster.pipanel.usecases.SystemStatsUseCase
+import com.rillmaster.pipanel.managers.AdvancedSettingsManager
+import com.rillmaster.pipanel.managers.ProfileManager
 import com.rillmaster.pipanel.model.SystemStats
-import com.rillmaster.pipanel.model.fetchSystemStats
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +21,9 @@ data class ControlUiState(
 )
 
 class ControlViewModel(
-    private val settings: SettingsManager
+    private val systemStatsUseCase: SystemStatsUseCase,
+    private val profileManager: ProfileManager,
+    private val advancedSettingsManager: AdvancedSettingsManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ControlUiState())
@@ -37,7 +40,13 @@ class ControlViewModel(
                     _uiState.update { it.copy(statsLoading = true) }
                 }
 
-                val result = fetchSystemStats(settings)
+                val result = systemStatsUseCase.fetchSystemStats(
+                    profileManager.host,
+                    profileManager.port,
+                    profileManager.username,
+                    profileManager.password,
+                    advancedSettingsManager.sshTimeoutMs
+                )
 
                 if (result != null) {
                     _uiState.update { it.copy(
@@ -53,7 +62,7 @@ class ControlViewModel(
                         statsLoading = false
                     ) }
                 }
-                delay(settings.tempRefreshMs.milliseconds)
+                delay(advancedSettingsManager.tempRefreshMs.milliseconds)
             }
         }
     }

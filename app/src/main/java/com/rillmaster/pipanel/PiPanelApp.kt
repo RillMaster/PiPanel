@@ -1,31 +1,40 @@
 package com.rillmaster.pipanel
 
 import android.app.Application
+import android.util.Log
+import com.rillmaster.pipanel.vpn.WgTunnelManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import java.security.Security
 
 class PiPanelApp : Application() {
     lateinit var settingsManager: SettingsManager
     lateinit var updateManager: UpdateManager
+    lateinit var vpnManager: WgTunnelManager
+
+    /** Scope lié au processus applicatif (survit à la destruction des Activity). */
+    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
         
         try {
             // On l'ajoute en position 1 pour qu'il soit prioritaire sur les implémentations système
-            java.security.Security.removeProvider("BC")
-            val result = java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
-            android.util.Log.d("PiPanelApp", "BouncyCastle registered at position $result")
-            
-            // Log available algorithms for Ed25519
-            val kpg = java.security.KeyPairGenerator.getInstance("Ed25519")
-            android.util.Log.d("PiPanelApp", "Ed25519 KeyPairGenerator provider: ${kpg.provider.name}")
+            Security.removeProvider("BC")
+            val result = Security.insertProviderAt(BouncyCastleProvider(), 1)
+            Log.d("PiPanelApp", "BouncyCastle registered at position $result")
         } catch (e: Exception) {
-            android.util.Log.e("PiPanelApp", "Failed to register BouncyCastle or find Ed25519", e)
+            Log.e("PiPanelApp", "Failed to register BouncyCastle", e)
         }
 
         instance = this
         settingsManager = SettingsManager(this)
         settingsManager.loadTerminalTheme()
         updateManager = UpdateManager(this)
+        vpnManager = WgTunnelManager(this)
+        vpnManager.refreshState()
     }
 
     companion object {

@@ -1,6 +1,8 @@
 @file:Suppress("SpellCheckingInspection")
 package com.rillmaster.pipanel
 
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +30,12 @@ import androidx.core.graphics.set
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
+import com.rillmaster.pipanel.vpn.WgTunnelManager
+import com.wireguard.android.backend.Tunnel
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.wireguard.android.backend.GoBackend
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
@@ -331,13 +339,18 @@ internal suspend fun getPublicKeyFromPrivate(settings: SettingsManager, privateK
 fun WireGuardScreen(
     settings: SettingsManager,
     onOpenMenu: () -> Unit,
-    showNavigationIcon: Boolean = true
+    showNavigationIcon: Boolean = true,
+    onOpenEditor: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val tunnelManager = PiPanelApp.instance.vpnManager
+    val vpnState by tunnelManager.state.collectAsState()
+    
     var wgStatus by remember { mutableStateOf<WgStatus?>(null) }
     var loading by remember { mutableStateOf(true) }
     var toggling by remember { mutableStateOf(false) }
+    var isVpnToggling by remember { mutableStateOf(false) }
     val restarting by remember { mutableStateOf(false) }
     var snackMsg by remember { mutableStateOf<String?>(null) }
     val snackState = remember { SnackbarHostState() }
@@ -345,6 +358,17 @@ fun WireGuardScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf<WgPeer?>(null) }
     var showConfigDialog by remember { mutableStateOf<String?>(null) }
+
+    // Launcher pour la permission VPN
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        scope.launch {
+            if (settings.vpnConfig.isNotBlank()) {
+                tunnelManager.startTunnel(settings.vpnConfig)
+            }
+        }
+    }
 
     // Pre-fetch strings to avoid LocalContext.current warnings in lambdas
     val wgStarted = stringResource(R.string.wg_started)
@@ -369,6 +393,7 @@ fun WireGuardScreen(
     
     // Refresh automatique toutes les 30 secondes
     LaunchedEffect(Unit) {
+        tunnelManager.refreshState()
         refresh(showLoading = true)
         while (true) {
             delay(30.seconds)
@@ -419,20 +444,98 @@ fun WireGuardScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                wgStatus?.let { s ->
-                    WgInterfaceCard(s, toggling || restarting) {
+                // Section VPN Intégré (Client Local)
+                VpnClientCard(
+                    settings = settings,
+                    vpnState = vpnState,
+                    isToggling = isVpnToggling,
+                    onToggle = {
                         scope.launch {
-                            toggling = true
-                            if (toggleWireGuard(settings, s.interfaceName, !s.isUp)) {
-                                delay(1.seconds); refresh()
-                                snackMsg = if (!s.isUp) wgStarted else wgStopped
-                            } else snackMsg = updateError
-                            toggling = false
+                            if (vpnState == Tunnel.State.UP) {
+                                isVpnToggling = true
+                                tunnelManager.stopTunnel()
+                                isVpnToggling = false
+                            } else {
+                                if (settings.vpnConfig.isBlank()) {
+                                    snackMsg = "VPN non configuré"
+                                    return@launch
+                                }
+                                
+                                val intent = GoBackend.VpnService.prepare(context)
+                                if (intent != null) {
+                                    vpnPermissionLauncher.launch(intent)
+                                } else {
+                                    isVpnToggling = true
+                                    tunnelManager.startTunnel(settings.vpnConfig)
+                                    isVpnToggling = false
+                                }
+                            }
+                        }
+                    },
+                    onConfigure = {
+                        scope.launch {
+                            loading = true
+                            try {
+                                // 1. Générer les clés
+                                val kp = tunnelManager.generateKeyPair()
+                                val priv = kp.privateKey.toBase64()
+                                val pub = kp.publicKey.toBase64()
+                                
+                                // 2. Ajouter au serveur
+                                val res = addWgPeer(
+                                    settings, 
+                                    wgStatus?.interfaceName ?: "wg0", 
+                                    "PiPanel Client", 
+                                    "1.1.1.1", 
+                                    "0.0.0.0/0", 
+                                    settings.host, 
+                                    wgStatus?.listenPort ?: 51820, 
+                                    pub
+                                )
+                                
+                                res.onSuccess { config ->
+                                    // On injecte notre clé privée locale dans la config retournée par le serveur
+                                    val finalConfig = config.replace("PrivateKey = ", "PrivateKey = $priv")
+                                    settings.vpnPrivateKey = priv
+                                    settings.vpnPublicKey = pub
+                                    settings.vpnConfig = finalConfig
+                                    snackMsg = "VPN configuré avec succès !"
+                                }.onFailure { 
+                                    snackMsg = "Erreur SSH: ${it.message}"
+                                }
+                            } catch (e: Exception) {
+                                snackMsg = "Erreur: ${e.message}"
+                            }
+                            loading = false
+                        }
+                    },
+                    onEdit = onOpenEditor
+                )
+
+                wgStatus?.let { s ->
+                    AnimatedEntrance(delayMillis = 0) {
+                        WgInterfaceCard(s, toggling || restarting) {
+                            scope.launch {
+                                toggling = true
+                                if (toggleWireGuard(settings, s.interfaceName, !s.isUp)) {
+                                    delay(1.seconds); refresh()
+                                    snackMsg = if (!s.isUp) wgStarted else wgStopped
+                                } else snackMsg = updateError
+                                toggling = false
+                            }
                         }
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        WgStatCard(stringResource(R.string.wg_status_configured), s.peers.size.toString(), Icons.Default.Group, WgBlue, Modifier.weight(1f))
-                        WgStatCard(stringResource(R.string.wg_status_connected), s.peers.count { it.isOnline }.toString(), Icons.Default.Wifi, WgGreen, Modifier.weight(1f))
+                        Box(modifier = Modifier.weight(1f)) {
+                            AnimatedEntrance(delayMillis = 50) {
+                                WgStatCard(stringResource(R.string.wg_status_configured), s.peers.size.toString(), Icons.Default.Group, WgBlue)
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            AnimatedEntrance(delayMillis = 100) {
+                                WgStatCard(stringResource(R.string.wg_status_connected), s.peers.count { it.isOnline }.toString(), Icons.Default.Wifi, WgGreen)
+                            }
+                        }
                     }
                     Text(
                         stringResource(R.string.wg_clients_count, s.peers.size), 
@@ -441,18 +544,20 @@ fun WireGuardScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    s.peers.forEach { peer ->
-                        WgPeerCard(peer, onRename = { showRenameDialog = peer }) {
-                            scope.launch {
-                                loading = true
-                                if (deleteWgPeer(settings, s.interfaceName, peer.publicKey)) {
-                                    delay(500.milliseconds)
-                                    refresh()
-                                    snackMsg = clientDeleted
-                                } else {
-                                    snackMsg = errorDeletion
+                    s.peers.forEachIndexed { index, peer ->
+                        AnimatedEntrance(delayMillis = 150 + index * 50) {
+                            WgPeerCard(peer, onRename = { showRenameDialog = peer }) {
+                                scope.launch {
+                                    loading = true
+                                    if (deleteWgPeer(settings, s.interfaceName, peer.publicKey)) {
+                                        delay(500.milliseconds)
+                                        refresh()
+                                        snackMsg = clientDeleted
+                                    } else {
+                                        snackMsg = errorDeletion
+                                    }
+                                    loading = false
                                 }
-                                loading = false
                             }
                         }
                     }
@@ -706,7 +811,7 @@ fun RenamePeerDialog(currentName: String, onDismiss: () -> Unit, onConfirm: (Str
 @Composable
 private fun WgInterfaceCard(status: WgStatus, toggling: Boolean, onToggle: () -> Unit) {
     val context = LocalContext.current
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, if (status.isUp) WgGreen.copy(0.3f) else WgGrey.copy(0.2f))) {
+    Card(modifier = Modifier.fillMaxWidth().animateContentSize(), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, if (status.isUp) WgGreen.copy(0.3f) else WgGrey.copy(0.2f))) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -742,7 +847,7 @@ private fun WgPeerCard(peer: WgPeer, onRename: () -> Unit, onDelete: () -> Unit)
     val handshake = if (peer.lastHandshake == "never") neverStr else peer.lastHandshake
     val endpoint = if (peer.endpoint == "never") neverStr else peer.endpoint
 
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+    Card(modifier = Modifier.fillMaxWidth().animateContentSize(), shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(color))
@@ -815,6 +920,93 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_048_576L     -> "%.1f MB".format(bytes / 1_048_576.0)
     bytes >= 1_024L         -> "%.1f KB".format(bytes / 1_024.0)
     else                    -> "$bytes B"
+}
+
+@Composable
+private fun VpnClientCard(
+    settings: SettingsManager,
+    vpnState: Tunnel.State,
+    isToggling: Boolean,
+    onToggle: () -> Unit,
+    onConfigure: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val isConfigured = settings.vpnConfig.isNotBlank()
+    val statusColor = when (vpnState) {
+        Tunnel.State.UP -> WgGreen
+        Tunnel.State.TOGGLE -> WgOrange
+        else -> WgGrey
+    }
+
+    AnimatedEntrance {
+        Card(
+            modifier = Modifier.fillMaxWidth().animateContentSize(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
+            ),
+            border = BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Default.Security, null, tint = statusColor)
+                        Column {
+                            Text("VPN PiPanel", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text(
+                                text = when (vpnState) {
+                                    Tunnel.State.UP -> "Connecté"
+                                    Tunnel.State.TOGGLE -> "Transition..."
+                                    else -> if (isConfigured) "Déconnecté" else "Non configuré"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = statusColor
+                            )
+                        }
+                    }
+                    
+                    if (isConfigured) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onEdit) {
+                                Icon(Icons.Default.Edit, contentDescription = "Éditer", tint = Color.Gray)
+                            }
+                            if (isToggling) {
+                                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                            } else {
+                                Switch(
+                                    checked = vpnState == Tunnel.State.UP,
+                                    onCheckedChange = { onToggle() }
+                                )
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = onConfigure,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(Icons.Default.AutoFixHigh, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Configurer", fontSize = 12.sp)
+                        }
+                    }
+                }
+                
+                if (isConfigured && vpnState != Tunnel.State.UP) {
+                    Text(
+                        "Utilisez ce VPN pour accéder à votre Pi de n'importe où en toute sécurité.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
 }
 
 private fun generateQrCode(text: String): Bitmap? {

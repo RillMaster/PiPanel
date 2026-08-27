@@ -1,9 +1,11 @@
 package com.rillmaster.pipanel.ui.screens
 
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -80,18 +82,20 @@ fun SshKeysScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(keys) { key ->
-                    KeyItem(
-                        key = key,
-                        onCopyPublic = {
-                            clipboard.setText(AnnotatedString(key.publicKey))
-                        },
-                        onDelete = {
-                            val newList = keys.filter { it.id != key.id }
-                            keys = newList
-                            settings.sshKeys = newList
-                        }
-                    )
+                itemsIndexed(keys) { index, key ->
+                    AnimatedEntrance(delayMillis = index * 50) {
+                        KeyItem(
+                            key = key,
+                            onCopyPublic = {
+                                clipboard.setText(AnnotatedString(key.publicKey))
+                            },
+                            onDelete = {
+                                val newList = keys.filter { it.id != key.id }
+                                keys = newList
+                                settings.sshKeys = newList
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -131,7 +135,7 @@ fun KeyItem(
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -12,6 +12,7 @@ import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
 import com.rillmaster.pipanel.model.SystemStats
 import com.rillmaster.pipanel.model.fetchSystemStats
+import com.rillmaster.pipanel.ssh.SshSessionManager
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -64,6 +65,8 @@ class WidgetUpdateService : Service() {
             while (isActive) {
                 if (settings.isConfigured()) {
                     fetchSystemStats(settings)?.let { updateWidget(it, settings) }
+                    // Nettoie les sessions SSH inactives (ex: si l'app est fermée)
+                    SshSessionManager.cleanIdleSessions(maxIdleMs = 45_000)
                 }
                 delay(5000) // 5 secondes
             }

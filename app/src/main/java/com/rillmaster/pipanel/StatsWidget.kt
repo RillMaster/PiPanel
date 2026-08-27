@@ -13,7 +13,6 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.*
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
-import com.rillmaster.pipanel.model.fetchSystemStats
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.layout.*
 import androidx.glance.state.GlanceStateDefinition
@@ -27,6 +26,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.work.*
+import com.rillmaster.pipanel.model.fetchSystemStats
 import java.util.concurrent.TimeUnit
 
 // ── État du Widget ───────────────────────────────────────────────────────────
@@ -198,13 +198,13 @@ class StatsWidgetReceiver : GlanceAppWidgetReceiver() {
 
 // ── Worker pour mettre à jour les stats ──────────────────────────────────────
 class UpdateStatsWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    
+
     companion object {
         fun enqueue(context: Context, force: Boolean = false) {
             val request = OneTimeWorkRequestBuilder<UpdateStatsWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .build()
-            
+
             WorkManager.getInstance(context).enqueueUniqueWork(
                 "update_stats_widget_manual",
                 if (force) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
@@ -226,7 +226,7 @@ class UpdateStatsWorker(context: Context, params: WorkerParameters) : CoroutineW
     override suspend fun doWork(): Result {
         val context = applicationContext
         val settings = SettingsManager(context)
-        
+
         if (!settings.isConfigured()) return Result.failure()
 
         // Check if user is unlocked to avoid IllegalStateException: User 0 must be unlocked
@@ -236,10 +236,16 @@ class UpdateStatsWorker(context: Context, params: WorkerParameters) : CoroutineW
             return Result.retry()
         }
 
-        val stats = fetchSystemStats(settings) ?: return Result.retry()
+        val stats = fetchSystemStats(
+            settings.host,
+            settings.port,
+            settings.username,
+            settings.password,
+            settings.sshTimeoutMs
+        ) ?: return Result.retry()
 
         val glanceId = GlanceAppWidgetManager(context).getGlanceIds(StatsWidget::class.java).firstOrNull()
-        
+
         if (glanceId != null) {
             updateAppWidgetState(context, glanceId) { prefs ->
                 prefs[StatsWidgetKeys.temp]      = stats.tempCelsius

@@ -1,8 +1,9 @@
 package com.rillmaster.pipanel
 
 import android.annotation.SuppressLint
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -414,70 +415,92 @@ fun PiHoleScreen(
                 stats != null -> {
                     val s = stats!!
 
-                    PiHoleToggleCard(
-                        enabled  = s.enabled,
-                        toggling = toggling,
-                        onToggle = {
-                            scope.launch {
-                                toggling = true
-                                val success = togglePiHole(settings, !s.enabled)
-                                if (success) {
-                                    delay(1500)
-                                    val newStats = fetchPiHoleStatus(settings, settings.piHolePassword)
-                                    if (newStats != null) stats = newStats
-                                    snackRes = if (!s.enabled) R.string.pihole_active_msg else R.string.pihole_inactive_msg
-                                } else {
-                                    snackRes = R.string.error_state_change
+                    AnimatedEntrance(delayMillis = 0) {
+                        PiHoleToggleCard(
+                            enabled  = s.enabled,
+                            toggling = toggling,
+                            onToggle = {
+                                scope.launch {
+                                    toggling = true
+                                    val success = togglePiHole(settings, !s.enabled)
+                                    if (success) {
+                                        delay(1500)
+                                        val newStats = fetchPiHoleStatus(settings, settings.piHolePassword)
+                                        if (newStats != null) stats = newStats
+                                        snackRes = if (!s.enabled) R.string.pihole_active_msg else R.string.pihole_inactive_msg
+                                    } else {
+                                        snackRes = R.string.error_state_change
+                                    }
+                                    toggling = false
                                 }
-                                toggling = false
                             }
-                        }
-                    )
+                        )
+                    }
 
-                    PiHoleBlockingCard(s)
+                    AnimatedEntrance(delayMillis = 50) {
+                        PiHoleBlockingCard(s)
+                    }
 
                     Text(stringResource(R.string.stats_today),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PiHoleStatCard(stringResource(R.string.dns_queries),        formatNumber(s.dnsQueriesToday), Icons.Default.Dns,    PiHoleBlue,  Modifier.weight(1f))
-                        PiHoleStatCard(stringResource(R.string.ads_blocked), formatNumber(s.adsBlockedToday), Icons.Default.Block,  PiHoleRed,   Modifier.weight(1f))
+                        Box(modifier = Modifier.weight(1f)) {
+                            AnimatedEntrance(delayMillis = 100) {
+                                PiHoleStatCard(stringResource(R.string.dns_queries),        formatNumber(s.dnsQueriesToday), Icons.Default.Dns,    PiHoleBlue)
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            AnimatedEntrance(delayMillis = 150) {
+                                PiHoleStatCard(stringResource(R.string.ads_blocked), formatNumber(s.adsBlockedToday), Icons.Default.Block,  PiHoleRed)
+                            }
+                        }
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PiHoleStatCard(stringResource(R.string.cached_domains), formatNumber(s.queriesCached),  Icons.Default.Memory,  PiHoleAmber, Modifier.weight(1f))
-                        PiHoleStatCard(stringResource(R.string.clients_seen),       s.clientsEverSeen.toString(),   Icons.Default.Devices, PiHoleGreen, Modifier.weight(1f))
+                        Box(modifier = Modifier.weight(1f)) {
+                            AnimatedEntrance(delayMillis = 200) {
+                                PiHoleStatCard(stringResource(R.string.cached_domains), formatNumber(s.queriesCached),  Icons.Default.Memory,  PiHoleAmber)
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            AnimatedEntrance(delayMillis = 250) {
+                                PiHoleStatCard(stringResource(R.string.clients_seen),       s.clientsEverSeen.toString(),   Icons.Default.Devices, PiHoleGreen)
+                            }
+                        }
                     }
 
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Row(modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Icon(Icons.Default.Shield, contentDescription = null,
-                                tint = PiHoleRed, modifier = Modifier.size(28.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.blocking_list), 
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    stringResource(R.string.domains_blocked_count, formatNumber(s.domainsBlocked)),
-                    style = MaterialTheme.typography.titleMedium, 
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    stringResource(R.string.unique_domains_seen, formatNumber(s.uniqueDomains)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+                    AnimatedEntrance(delayMillis = 300) {
+                        Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
+                            Row(modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Icon(Icons.Default.Shield, contentDescription = null,
+                                    tint = PiHoleRed, modifier = Modifier.size(28.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.blocking_list), 
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        stringResource(R.string.domains_blocked_count, formatNumber(s.domainsBlocked)),
+                        style = MaterialTheme.typography.titleMedium, 
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        stringResource(R.string.unique_domains_seen, formatNumber(s.uniqueDomains)),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                            }
                         }
                     }
                 }
@@ -491,7 +514,7 @@ private fun PiHoleToggleCard(enabled: Boolean, toggling: Boolean, onToggle: () -
     val bgColor     by animateColorAsState(if (enabled) PiHoleGreen.copy(0.12f) else PiHoleRed.copy(0.08f), label = "bg")
     val borderColor by animateColorAsState(if (enabled) PiHoleGreen.copy(0.4f)  else PiHoleRed.copy(0.25f), label = "border")
 
-    Card(modifier = Modifier.fillMaxWidth(),
+    Card(modifier = Modifier.fillMaxWidth().animateContentSize(),
         colors = CardDefaults.cardColors(containerColor = bgColor),
         border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)) {
         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(),
@@ -548,14 +571,20 @@ private fun PiHoleBlockingCard(s: PiHoleStats) {
         s.adsPercentage >= 10 -> PiHoleAmber
         else                  -> PiHoleRed
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = pct,
+        animationSpec = tween(durationMillis = 800, easing = LinearOutSlowInEasing),
+        label = "pihole_blocking_progress"
+    )
+
+    Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(stringResource(R.string.blocking_rate), style = MaterialTheme.typography.titleSmall)
                 Text("%.1f%%".format(s.adsPercentage), fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = color)
             }
             LinearProgressIndicator(
-                progress   = { pct },
+                progress   = { animatedProgress },
                 modifier   = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
                 color      = color,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant

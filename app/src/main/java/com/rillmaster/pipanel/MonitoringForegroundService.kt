@@ -50,7 +50,13 @@ class MonitoringForegroundService : Service() {
         updateJob = serviceScope.launch {
             val settings = PiPanelApp.instance.settingsManager
             while (isActive) {
-                val stats = fetchSystemStats(settings)
+                val stats = fetchSystemStats(
+                    settings.host,
+                    settings.port,
+                    settings.username,
+                    settings.password,
+                    settings.sshTimeoutMs
+                )
                 val text = if (stats != null) {
                     "Temp: %.1f°C | CPU: %d%% | RAM: %d/%d MB".format(
                         stats.tempCelsius, stats.cpuPercent, stats.ramUsedMb, stats.ramTotalMb

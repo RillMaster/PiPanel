@@ -1,10 +1,11 @@
 package com.rillmaster.pipanel
 
 import androidx.compose.animation.*
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -116,18 +117,20 @@ fun WifiManagementScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(networks) { network ->
-                        WifiNetworkItem(
-                            network = network,
-                            isConnecting = connectingSsid == network.ssid,
-                            onClick = {
-                                if (network.isConnected) {
-                                    // Option to forget or just show info
-                                } else {
-                                    showPasswordDialog = network
+                    itemsIndexed(networks) { index, network ->
+                        AnimatedEntrance(delayMillis = index * 50) {
+                            WifiNetworkItem(
+                                network = network,
+                                isConnecting = connectingSsid == network.ssid,
+                                onClick = {
+                                    if (network.isConnected) {
+                                        // Option to forget or just show info
+                                    } else {
+                                        showPasswordDialog = network
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -173,7 +176,7 @@ fun WifiNetworkItem(
     onClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = !isConnecting) { onClick() },
+        modifier = Modifier.fillMaxWidth().animateContentSize().clickable(enabled = !isConnecting) { onClick() },
         shape = RoundedCornerShape(16.dp),
         colors = if (network.isConnected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
                  else CardDefaults.cardColors()

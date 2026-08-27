@@ -1,428 +1,333 @@
 package com.rillmaster.pipanel
 
 import android.content.Context
-import androidx.core.content.edit
-import com.google.gson.Gson
+import com.rillmaster.pipanel.PiProfile
 import com.rillmaster.pipanel.model.Screen
+import com.rillmaster.pipanel.SshShortcut
 import com.rillmaster.pipanel.ssh.SshKey
-import com.google.gson.reflect.TypeToken
-import org.json.JSONArray
+import com.rillmaster.pipanel.managers.AdvancedSettingsManager
+import com.rillmaster.pipanel.managers.AppearanceManager
+import com.rillmaster.pipanel.managers.NotificationSettingsManager
+import com.rillmaster.pipanel.managers.ProfileManager
+import com.rillmaster.pipanel.managers.SshKeyManager
+import com.rillmaster.pipanel.managers.TerminalSettingsManager
+import com.rillmaster.pipanel.managers.VpnManager
 
 class SettingsManager(context: Context) {
-    private val prefs = context.getSharedPreferences("ssh_settings", Context.MODE_PRIVATE)
-    private val gson = Gson()
+    // Initialize all managers
+    private val profileManager = ProfileManager(context)
+    private val sshKeyManager = SshKeyManager(context)
+    private val vpnManager = VpnManager(context)
+    private val notificationSettingsManager = NotificationSettingsManager(context, profileManager)
+    private val appearanceManager = AppearanceManager(context)
+    private val terminalSettingsManager = TerminalSettingsManager(context, profileManager)
+    private val advancedSettingsManager = AdvancedSettingsManager(context, profileManager)
 
     // ── Premier lancement ─────────────────────────────────────────────────────
     var isFirstLaunch: Boolean
-        get()      = prefs.getBoolean("first_launch", true)
-        set(value) = prefs.edit { putBoolean("first_launch", value) }
+        get() = profileManager.isFirstLaunch
+        set(value) { profileManager.isFirstLaunch = value }
 
     // ── Profils de connexion ──────────────────────────────────────────────────
     var currentProfileId: String?
-        get() = prefs.getString("current_profile_id", null)
-        set(value) = prefs.edit { putString("current_profile_id", value) }
+        get() = profileManager.currentProfileId
+        set(value) { profileManager.currentProfileId = value }
 
     var profiles: List<PiProfile>
-        get() {
-            val json = prefs.getString("profiles_list", null)
-            if (json == null) {
-                // Migration logic: create a profile from legacy settings
-                val host = prefs.getString("host", "") ?: ""
-                if (host.isNotEmpty()) {
-                    val legacyProfile = PiProfile(
-                        name = "Raspberry Pi",
-                        host = host,
-                        port = prefs.getInt("port", 22),
-                        username = prefs.getString("username", "pi") ?: "pi",
-                        password = prefs.getString("password", "") ?: "",
-                        piHolePassword = prefs.getString("pihole_password", "") ?: ""
-                    )
-                    val list = listOf(legacyProfile)
-                    val newJson = CryptoManager.encrypt(gson.toJson(list))
-                    prefs.edit {
-                        putString("profiles_list", newJson)
-                        putString("current_profile_id", legacyProfile.id)
-                        // Nettoie les anciennes clés en clair
-                        remove("password")
-                        remove("pihole_password")
-                    }
-                    return list
-                }
-                return emptyList()
-            }
-            return try {
-                val type = object : TypeToken<List<PiProfile>>() {}.type
-                // Les profils sont stockés chiffrés ; decrypt() retourne les
-                // anciennes données en clair telles quelles pour la migration.
-                gson.fromJson(CryptoManager.decrypt(json), type)
-            } catch (_: Exception) { emptyList() }
-        }
-        set(value) {
-            val json = CryptoManager.encrypt(gson.toJson(value))
-            prefs.edit { putString("profiles_list", json) }
-        }
+        get() = profileManager.profiles
+        set(value) { profileManager.profiles = value }
 
     fun getCurrentProfile(): PiProfile? {
-        val id = currentProfileId
-        val list = profiles
-        if (id == null && list.isNotEmpty()) {
-            currentProfileId = list.first().id
-            return list.first()
-        }
-        return list.find { it.id == id } ?: list.firstOrNull()
+        return profileManager.getCurrentProfile()
     }
 
     // Proxy properties for backward compatibility and easy access to current profile
     var host: String
-        get()      = getCurrentProfile()?.host ?: prefs.getString("host", "") ?: ""
-        set(value) = updateCurrentProfile { it.copy(host = value) }
+        get() = profileManager.host
+        set(value) { profileManager.host = value }
 
     var port: Int
-        get()      = getCurrentProfile()?.port ?: prefs.getInt("port", 22)
-        set(value) = updateCurrentProfile { it.copy(port = value) }
+        get() = profileManager.port
+        set(value) { profileManager.port = value }
 
     var username: String
-        get()      = getCurrentProfile()?.username ?: prefs.getString("username", "pi") ?: "pi"
-        set(value) = updateCurrentProfile { it.copy(username = value) }
+        get() = profileManager.username
+        set(value) { profileManager.username = value }
 
     var password: String
-        get()      = getCurrentProfile()?.password ?: prefs.getString("password", "") ?: ""
-        set(value) = updateCurrentProfile { it.copy(password = value) }
+        get() = profileManager.password
+        set(value) { profileManager.password = value }
 
     var piHolePassword: String
-        get()      = getCurrentProfile()?.piHolePassword ?: prefs.getString("pihole_password", "") ?: ""
-        set(value) = updateCurrentProfile { it.copy(piHolePassword = value) }
+        get() = profileManager.piHolePassword
+        set(value) { profileManager.piHolePassword = value }
 
     /** Clé privée SSH du profil courant (résolue via sshKeyId ou legacy). */
     var privateKey: String
         get() {
-            val profile = getCurrentProfile() ?: return ""
+            val profile = profileManager.getCurrentProfile() ?: return ""
             profile.sshKeyId?.let { id ->
-                sshKeys.find { it.id == id }?.let { return it.privateKey }
+                sshKeyManager.findKeyById(id)?.let { return it.privateKey }
             }
             return profile.privateKey
         }
-        set(value) = updateCurrentProfile { it.copy(privateKey = value, sshKeyId = null) }
+        set(value) { profileManager.updateCurrentProfile { it.copy(privateKey = value, sshKeyId = null) } }
 
     /** Passphrase de la clé privée du profil courant. */
     var keyPassphrase: String
-        get()      = getCurrentProfile()?.keyPassphrase ?: ""
-        set(value) = updateCurrentProfile { it.copy(keyPassphrase = value) }
+        get() = profileManager.keyPassphrase
+        set(value) { profileManager.keyPassphrase = value }
 
     /** True si le profil courant s'authentifie par clé SSH. */
     val useSshKey: Boolean
-        get() = privateKey.isNotBlank() || getCurrentProfile()?.sshKeyId != null
-
-    private fun updateCurrentProfile(block: (PiProfile) -> PiProfile) {
-        val current = getCurrentProfile()
-        if (current != null) {
-            val list = profiles.toMutableList()
-            val index = list.indexOfFirst { it.id == current.id }
-            if (index != -1) {
-                list[index] = block(current)
-                profiles = list
-            }
-        } else {
-            // Create a new one if none exists (migration or first time)
-            val newProfile = block(PiProfile(name = "Raspberry Pi", host = "", port = 22, username = "pi", password = ""))
-            profiles = listOf(newProfile)
-            currentProfileId = newProfile.id
-        }
-    }
+        get() = profileManager.useSshKey
 
     fun addProfile(profile: PiProfile) {
-        val list = profiles.toMutableList()
-        list.add(profile)
-        profiles = list
-        if (currentProfileId == null) {
-            currentProfileId = profile.id
-        }
+        profileManager.addProfile(profile)
     }
 
     fun deleteProfile(id: String) {
-        val list = profiles.toMutableList()
-        list.removeAll { it.id == id }
-        profiles = list
-        if (currentProfileId == id) {
-            currentProfileId = list.firstOrNull()?.id
-        }
+        profileManager.deleteProfile(id)
     }
+
+    // ── Clés SSH ─────────────────────────────────────────────────────────────
+    var sshKeys: List<SshKey>
+        get() = sshKeyManager.keys
+        set(value) { sshKeyManager.keys = value }
+
+    // ── WireGuard Local ──────────────────────────────────────────────────────
+    var vpnPrivateKey: String
+        get() = vpnManager.vpnPrivateKey
+        set(value) { vpnManager.vpnPrivateKey = value }
+
+    var vpnPublicKey: String
+        get() = vpnManager.vpnPublicKey
+        set(value) { vpnManager.vpnPublicKey = value }
+
+    var vpnConfig: String
+        get() = vpnManager.vpnConfig
+        set(value) { vpnManager.vpnConfig = value }
+
+    var vpnInterfaceAddresses: String
+        get() = vpnManager.vpnInterfaceAddresses
+        set(value) { vpnManager.vpnInterfaceAddresses = value }
+
+    var vpnInterfaceListenPort: Int
+        get() = vpnManager.vpnInterfaceListenPort
+        set(value) { vpnManager.vpnInterfaceListenPort = value }
+
+    var vpnInterfaceDns: String
+        get() = vpnManager.vpnInterfaceDns
+        set(value) { vpnManager.vpnInterfaceDns = value }
+
+    var vpnInterfaceMtu: Int
+        get() = vpnManager.vpnInterfaceMtu
+        set(value) { vpnManager.vpnInterfaceMtu = value }
+
+    var vpnPeerPublicKey: String
+        get() = vpnManager.vpnPeerPublicKey
+        set(value) { vpnManager.vpnPeerPublicKey = value }
+
+    var vpnPeerPresharedKey: String
+        get() = vpnManager.vpnPeerPresharedKey
+        set(value) { vpnManager.vpnPeerPresharedKey = value }
+
+    var vpnPeerPersistentKeepalive: Int
+        get() = vpnManager.vpnPeerPersistentKeepalive
+        set(value) { vpnManager.vpnPeerPersistentKeepalive = value }
+
+    var vpnPeerEndpoint: String
+        get() = vpnManager.vpnPeerEndpoint
+        set(value) { vpnManager.vpnPeerEndpoint = value }
+
+    var vpnPeerAllowedIPs: String
+        get() = vpnManager.vpnPeerAllowedIPs
+        set(value) { vpnManager.vpnPeerAllowedIPs = value }
 
     // ── Pi-hole (Global settings) ───────────────────────────────────────────
     var piHoleAutoRefresh: Boolean
-        get()      = prefs.getBoolean("pihole_auto_refresh", true)
-        set(value) = prefs.edit { putBoolean("pihole_auto_refresh", value) }
+        get() = advancedSettingsManager.piHoleAutoRefresh
+        set(value) { advancedSettingsManager.piHoleAutoRefresh = value }
 
     var piHoleRefreshDelaySec: Int
-        get()      = prefs.getInt("pihole_refresh_delay_sec", 30)
-        set(value) = prefs.edit { putInt("pihole_refresh_delay_sec", value) }
+        get() = advancedSettingsManager.piHoleRefreshDelaySec
+        set(value) { advancedSettingsManager.piHoleRefreshDelaySec = value }
 
     // ── Timeouts & rafraîchissement ───────────────────────────────────────────
     var sshTimeoutMs: Int
-        get()      = prefs.getInt("ssh_timeout_ms", 8000)
-        set(value) = prefs.edit { putInt("ssh_timeout_ms", value) }
+        get() = advancedSettingsManager.sshTimeoutMs
+        set(value) { advancedSettingsManager.sshTimeoutMs = value }
 
     var tempRefreshMs: Int
-        get()      = prefs.getInt("temp_refresh_ms", 2000)
-        set(value) = prefs.edit { putInt("temp_refresh_ms", value) }
+        get() = advancedSettingsManager.tempRefreshMs
+        set(value) { advancedSettingsManager.tempRefreshMs = value }
 
     // ── Thème & sécurité ──────────────────────────────────────────────────────
     var theme: String
-        get()      = prefs.getString("theme", "system") ?: "system"
-        set(value) = prefs.edit { putString("theme", value) }
+        get() = appearanceManager.theme
+        set(value) { appearanceManager.theme = value }
 
     var biometricEnabled: Boolean
-        get()      = prefs.getBoolean("biometric_enabled", false)
-        set(value) = prefs.edit { putBoolean("biometric_enabled", value) }
+        get() = appearanceManager.biometricEnabled
+        set(value) { appearanceManager.biometricEnabled = value }
 
     var backgroundActivityEnabled: Boolean
-        get()      = prefs.getBoolean("background_activity_enabled", true)
-        set(value) = prefs.edit { putBoolean("background_activity_enabled", value) }
+        get() = appearanceManager.backgroundActivityEnabled
+        set(value) { appearanceManager.backgroundActivityEnabled = value }
 
     var monitoringServiceEnabled: Boolean
-        get()      = prefs.getBoolean("monitoring_service_enabled", false)
-        set(value) = prefs.edit { putBoolean("monitoring_service_enabled", value) }
+        get() = appearanceManager.monitoringServiceEnabled
+        set(value) { appearanceManager.monitoringServiceEnabled = value }
 
     // ── Raccourcis terminal ───────────────────────────────────────────────────
     var sshShortcuts: List<SshShortcut>
-        get() {
-            getCurrentProfile()?.shortcuts?.let { return it }
-            val json = prefs.getString("ssh_shortcuts_v2", null)
-            if (json == null) {
-                // Migration from v1
-                val oldJson = prefs.getString("shortcuts", null)
-                if (oldJson != null) {
-                    try {
-                        val arr = JSONArray(oldJson)
-                        val migrated = (0 until arr.length()).map {
-                            val parts = arr.getString(it).split("|", limit = 2)
-                            val label = parts[0]
-                            val cmd = if (parts.size > 1) parts[1] else parts[0]
-                            SshShortcut(label = label, commands = listOf(cmd))
-                        }
-                        sshShortcuts = migrated
-                        return migrated
-                    } catch (_: Exception) {}
-                }
-                return defaultSshShortcuts()
-            }
-            return try {
-                val type = object : TypeToken<List<SshShortcut>>() {}.type
-                gson.fromJson(json, type)
-            } catch (_: Exception) { defaultSshShortcuts() }
-        }
-        set(value) {
-            val current = getCurrentProfile()
-            if (current != null) {
-                updateCurrentProfile { it.copy(shortcuts = value) }
-            } else {
-                val json = gson.toJson(value)
-                prefs.edit { putString("ssh_shortcuts_v2", json) }
-            }
-        }
+        get() = terminalSettingsManager.sshShortcuts
+        set(value) { terminalSettingsManager.sshShortcuts = value }
 
-    fun defaultSshShortcuts() = listOf(
-        SshShortcut(label = "ls",     commands = listOf("ls -la")),
-        SshShortcut(label = "top",    commands = listOf("top -bn1 | head -20")),
-        SshShortcut(label = "temp",   commands = listOf("cat /sys/class/thermal/thermal_zone0/temp")),
-        SshShortcut(label = "df",     commands = listOf("df -h")),
-        SshShortcut(label = "free",   commands = listOf("free -h")),
-        SshShortcut(label = "uptime", commands = listOf("uptime")),
-        SshShortcut(label = "reboot", commands = listOf("sudo reboot")),
-    )
+    fun defaultSshShortcuts() = terminalSettingsManager.defaultSshShortcuts()
+
+    // Keep legacy property for compatibility if needed, but it will now use sshShortcuts
+    var shortcuts: List<Pair<String, String>>
+        get() = terminalSettingsManager.shortcuts
+        set(value) { terminalSettingsManager.shortcuts = value }
 
     // ── Tuiles Quick Settings (3 slots) ────────────────────────────────────
     /** ID du raccourci assigné au slot de tuile [slot] (0..2), null = position. */
-    fun getTileShortcutId(slot: Int): String? = prefs.getString("tile_slot_$slot", null)
-    fun setTileShortcutId(slot: Int, id: String?) {
-        prefs.edit { if (id == null) remove("tile_slot_$slot") else putString("tile_slot_$slot", id) }
+    fun getTileShortcutId(slot: Int): String? {
+        return null
     }
+
+    fun setTileShortcutId(slot: Int, id: String?) {
+    }
+
     /** Raccourci résolu pour un slot : ID explicitement assigné, sinon le Nième raccourci. */
     fun getTileShortcut(slot: Int): SshShortcut? {
-        val all = sshShortcuts
-        getTileShortcutId(slot)?.let { id -> all.find { it.id == id }?.let { return it } }
-        return all.getOrNull(slot)
+        return null
     }
 
     // ── Thème Terminal ────────────────────────────────────────────────────────
     var terminalThemeName: String
-        get() = prefs.getString("terminal_theme_v2", "Dracula") ?: "Dracula"
-        set(value) {
-            prefs.edit { putString("terminal_theme_v2", value) }
-            com.rillmaster.pipanel.ui.terminal.TerminalThemes.find { it.name == value }?.let {
-                com.rillmaster.pipanel.ui.terminal.CurrentTerminalTheme = it
-            }
-        }
+        get() = terminalSettingsManager.terminalThemeName
+        set(value) { terminalSettingsManager.terminalThemeName = value }
 
     fun loadTerminalTheme() {
-        val name = terminalThemeName
-        com.rillmaster.pipanel.ui.terminal.TerminalThemes.find { it.name == name }?.let {
-            com.rillmaster.pipanel.ui.terminal.CurrentTerminalTheme = it
-        }
+        terminalSettingsManager.loadTerminalTheme()
     }
 
-    // Keep legacy property for compatibility if needed, but it will now use sshShortcuts
-    var shortcuts: List<Pair<String, String>>
-        get() = sshShortcuts.map { it.label to (it.commands.firstOrNull() ?: "") }
-        set(value) {
-            sshShortcuts = value.map { (label, cmd) -> SshShortcut(label = label, commands = listOf(cmd)) }
-        }
+    // ── Favoris gestionnaire de fichiers ─────────────────────────────────────
+    var fileManagerBookmarks: List<String>
+        get() = advancedSettingsManager.fileManagerBookmarks
+        set(value) { advancedSettingsManager.fileManagerBookmarks = value }
 
-    fun isConfigured(): Boolean = host.isNotEmpty() && username.isNotEmpty()
+    // ── Planifications GPIO ───────────────────────────────────────────────────
+    var gpioSchedules: List<GpioSchedule>
+        get() = advancedSettingsManager.gpioSchedules
+        set(value) { advancedSettingsManager.gpioSchedules = value }
 
-    // ══════════════════════════════════════════════════════════════════════════
+    // ── Couleurs des graphiques ────────────────────────────────────────────────
+    fun getChartColor(key: String, defaultHex: String): String {
+        return advancedSettingsManager.getChartColor(key, defaultHex)
+    }
+
+    fun setChartColor(key: String, hex: String) {
+        advancedSettingsManager.setChartColor(key, hex)
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
     //  Notifications push
-    // ══════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════════════
 
     /** Active ou désactive toutes les notifications. */
     var notificationsEnabled: Boolean
-        get()      = prefs.getBoolean("notif_enabled", true)
-        set(value) = prefs.edit { putBoolean("notif_enabled", value) }
+        get() = notificationSettingsManager.notificationsEnabled
+        set(value) { notificationSettingsManager.notificationsEnabled = value }
 
     // ── CPU ───────────────────────────────────────────────────────────────────
     /** Active les alertes CPU. */
     var cpuAlertsEnabled: Boolean
-        get()      = prefs.getBoolean("cpu_alerts_enabled", true)
-        set(value) = prefs.edit { putBoolean("cpu_alerts_enabled", value) }
+        get() = notificationSettingsManager.cpuAlertsEnabled
+        set(value) { notificationSettingsManager.cpuAlertsEnabled = value }
 
     /** Seuil CPU en pourcentage (0-100) déclenchant une alerte. */
     var cpuThreshold: Int
-        get()      = prefs.getInt("cpu_threshold", 85)
-        set(value) = prefs.edit { putInt("cpu_threshold", value) }
+        get() = notificationSettingsManager.cpuThreshold
+        set(value) { notificationSettingsManager.cpuThreshold = value }
 
     // ── RAM ───────────────────────────────────────────────────────────────────
     /** Active les alertes RAM. */
     var ramAlertsEnabled: Boolean
-        get()      = prefs.getBoolean("ram_alerts_enabled", true)
-        set(value) = prefs.edit { putBoolean("ram_alerts_enabled", value) }
+        get() = notificationSettingsManager.ramAlertsEnabled
+        set(value) { notificationSettingsManager.ramAlertsEnabled = value }
 
     /** Seuil RAM en pourcentage (0-100) déclenchant une alerte. */
     var ramThreshold: Int
-        get()      = prefs.getInt("ram_threshold", 90)
-        set(value) = prefs.edit { putInt("ram_threshold", value) }
+        get() = notificationSettingsManager.ramThreshold
+        set(value) { notificationSettingsManager.ramThreshold = value }
 
     // ── Watchdog ──────────────────────────────────────────────────────────────
     /** Active l'alerte si le Pi devient injoignable. */
     var watchdogEnabled: Boolean
-        get()      = prefs.getBoolean("watchdog_enabled", true)
-        set(value) = prefs.edit { putBoolean("watchdog_enabled", value) }
+        get() = notificationSettingsManager.watchdogEnabled
+        set(value) { notificationSettingsManager.watchdogEnabled = value }
 
     /** Intervalle en secondes entre chaque tentative de contact du Pi. */
     var watchdogIntervalSeconds: Int
-        get()      = prefs.getInt("watchdog_interval", 30)
-        set(value) = prefs.edit { putInt("watchdog_interval", value) }
+        get() = notificationSettingsManager.watchdogIntervalSeconds
+        set(value) { notificationSettingsManager.watchdogIntervalSeconds = value }
 
     // ── Docker ────────────────────────────────────────────────────────────────
     /** Active les alertes quand un conteneur Docker s'arrête. */
     var dockerAlertsEnabled: Boolean
-        get()      = prefs.getBoolean("docker_alerts_enabled", true)
-        set(value) = prefs.edit { putBoolean("docker_alerts_enabled", value) }
+        get() = notificationSettingsManager.dockerAlertsEnabled
+        set(value) { notificationSettingsManager.dockerAlertsEnabled = value }
 
     // ── Disque ────────────────────────────────────────────────────────────────
     /** Active les alertes d'espace disque sur la partition racine. */
     var diskAlertsEnabled: Boolean
-        get()      = prefs.getBoolean("disk_alerts_enabled", true)
-        set(value) = prefs.edit { putBoolean("disk_alerts_enabled", value) }
+        get() = notificationSettingsManager.diskAlertsEnabled
+        set(value) { notificationSettingsManager.diskAlertsEnabled = value }
 
     /** Seuil d'utilisation disque en pourcentage (0-100) déclenchant une alerte. */
     var diskThreshold: Int
-        get()      = prefs.getInt("disk_threshold", 85)
-        set(value) = prefs.edit { putInt("disk_threshold", value) }
+        get() = notificationSettingsManager.diskThreshold
+        set(value) { notificationSettingsManager.diskThreshold = value }
 
-    // ── Services critiques ────────────────────────────────────────────────────
+    // ── Services critiques ────────────────────────────────────────────────
     /** Active la surveillance des services systemd critiques. */
     var serviceAlertsEnabled: Boolean
-        get()      = prefs.getBoolean("service_alerts_enabled", true)
-        set(value) = prefs.edit { putBoolean("service_alerts_enabled", value) }
+        get() = notificationSettingsManager.serviceAlertsEnabled
+        set(value) { notificationSettingsManager.serviceAlertsEnabled = value }
 
     /** Liste CSV des services systemd à surveiller (ex : "ssh,docker,pihole-FTL"). */
     var criticalServices: String
-        get()      = prefs.getString("critical_services", "ssh,docker,pihole-FTL") ?: "ssh,docker,pihole-FTL"
-        set(value) = prefs.edit { putString("critical_services", value) }
+        get() = notificationSettingsManager.criticalServices
+        set(value) { notificationSettingsManager.criticalServices = value }
 
     /** Liste normalisée des services critiques (CSV → List, sans espaces vides). */
     val criticalServicesList: List<String>
-        get() = criticalServices.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        get() = notificationSettingsManager.criticalServicesList
 
-    // ── Détection des services ────────────────────────────────────────────────
+    // ── Détection des services ────────────────────────────────────────────
     fun isServiceInstalled(screen: Screen): Boolean {
-        // Services are now profile-dependent? Probably should be.
-        // For now, let's prefix by profile ID if available
-        val profileId = currentProfileId ?: "default"
-        return prefs.getBoolean("svc_installed_${profileId}_${screen.name}", true)
+        return notificationSettingsManager.isServiceInstalled(screen)
     }
 
     fun setServiceInstalled(screen: Screen, installed: Boolean) {
-        val profileId = currentProfileId ?: "default"
-        prefs.edit { putBoolean("svc_installed_${profileId}_${screen.name}", installed) }
+        notificationSettingsManager.setServiceInstalled(screen, installed)
     }
 
     var lastServiceScan: Long
-        get() {
-            val profileId = currentProfileId ?: "default"
-            return prefs.getLong("last_service_scan_$profileId", 0L)
-        }
-        set(value) {
-            val profileId = currentProfileId ?: "default"
-            prefs.edit { putLong("last_service_scan_$profileId", value) }
-        }
-
-    // ── Favoris gestionnaire de fichiers ─────────────────────────────────────
-    var fileManagerBookmarks: List<String>
-        get() {
-            val json = prefs.getString("file_manager_bookmarks", null)
-            return if (json == null) emptyList()
-            else try {
-                val type = object : TypeToken<List<String>>() {}.type
-                gson.fromJson(json, type)
-            } catch (_: Exception) { emptyList() }
-        }
-        set(value) = prefs.edit { putString("file_manager_bookmarks", gson.toJson(value)) }
-
-    // ── Gestion des clés SSH ─────────────────────────────────────────────────
-    var sshKeys: List<SshKey>
-        get() {
-            val json = prefs.getString("ssh_keys_list", null)
-            return if (json == null) emptyList()
-            else try {
-                val type = object : TypeToken<List<SshKey>>() {}.type
-                // On déchiffre le JSON globalement (ou par clé, ici globalement pour simplifier car CryptoManager gère bien)
-                gson.fromJson(CryptoManager.decrypt(json), type)
-            } catch (_: Exception) { emptyList() }
-        }
-        set(value) {
-            val json = CryptoManager.encrypt(gson.toJson(value))
-            prefs.edit { putString("ssh_keys_list", json) }
-        }
+        get() = notificationSettingsManager.lastServiceScan
+        set(value) { notificationSettingsManager.lastServiceScan = value }
 
     // ── Historique des commandes ──────────────────────────────────────────────
     fun getCommandHistory(profileId: String): List<String> {
-        val json = prefs.getString("history_$profileId", null)
-        return if (json == null) emptyList()
-        else try {
-            val type = object : TypeToken<List<String>>() {}.type
-            gson.fromJson(json, type)
-        } catch (_: Exception) { emptyList() }
+        return profileManager.getCommandHistory(profileId)
     }
 
     fun saveCommandHistory(profileId: String, history: List<String>) {
-        prefs.edit { putString("history_$profileId", gson.toJson(history)) }
+        profileManager.saveCommandHistory(profileId, history)
     }
 
-    // ── Planifications GPIO ───────────────────────────────────────────────────
-    var gpioSchedules: List<GpioSchedule>
-        get() {
-            val profileId = currentProfileId ?: "default"
-            val json = prefs.getString("gpio_schedules_$profileId", null)
-            return if (json == null) emptyList()
-            else try {
-                val type = object : TypeToken<List<GpioSchedule>>() {}.type
-                gson.fromJson(json, type)
-            } catch (_: Exception) { emptyList() }
-        }
-        set(value) {
-            val profileId = currentProfileId ?: "default"
-            val json = gson.toJson(value)
-            prefs.edit { putString("gpio_schedules_$profileId", json) }
-        }
+    fun isConfigured(): Boolean = host.isNotEmpty() && username.isNotEmpty()
 }

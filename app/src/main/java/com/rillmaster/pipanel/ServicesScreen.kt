@@ -1,9 +1,11 @@
 package com.rillmaster.pipanel
 
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -166,15 +168,17 @@ fun ServicesScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(filteredServices) { service ->
-                        ServiceCard(
-                            service = service,
-                            loadingAction = actionLoading[service.name],
-                            onStart = { runAction(service, "start") },
-                            onStop = { runAction(service, "stop") },
-                            onRestart = { runAction(service, "restart") },
-                            onLogs = { selectedLogService = service }
-                        )
+                    itemsIndexed(filteredServices) { index, service ->
+                        AnimatedEntrance(delayMillis = index * 50) {
+                            ServiceCard(
+                                service = service,
+                                loadingAction = actionLoading[service.name],
+                                onStart = { runAction(service, "start") },
+                                onStop = { runAction(service, "stop") },
+                                onRestart = { runAction(service, "restart") },
+                                onLogs = { selectedLogService = service }
+                            )
+                        }
                     }
                     if (filteredServices.isEmpty() && !isLoading) {
                         item {
@@ -208,7 +212,7 @@ fun ServiceCard(
 ) {
     val busy = loadingAction != null
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))

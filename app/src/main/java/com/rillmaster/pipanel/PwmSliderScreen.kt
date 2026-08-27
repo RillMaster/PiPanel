@@ -1,5 +1,7 @@
 package com.rillmaster.pipanel
 
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -95,46 +97,48 @@ fun PwmSliderScreen(
             )
 
             devices.forEachIndexed { idx, device ->
-                PwmDeviceCard(
-                    device        = device,
-                    dutyCycle     = dutyCycles[idx],
-                    isApplying    = isApplying[idx],
-                    onValueChange = { dutyCycles[idx] = it },
-                    onApply = {
+                AnimatedEntrance(delayMillis = idx * 100) {
+                    PwmDeviceCard(
+                        device        = device,
+                        dutyCycle     = dutyCycles[idx],
+                        isApplying    = isApplying[idx],
+                        onValueChange = { dutyCycles[idx] = it },
+                        onApply = {
+                            scope.launch {
+                                isApplying[idx] = true
+                                try {
+                                    val dc  = dutyCycles[idx].toInt()
+                                    SshClient.execute(
+                                        settings.host, settings.port,
+                                        settings.username, settings.password,
+                                        buildPwmCommand(device.pin, dc),
+                                        settings.sshTimeoutMs
+                                    )
+                                    snackbarHostState.showSnackbar(context.getString(R.string.pwm_apply_success, device.name, dc, device.unit))
+                                } catch (e: Exception) {
+                                    snackbarHostState.showSnackbar("❌ ${e.message}")
+                                } finally {
+                                    isApplying[idx] = false
+                                }
+                            }
+                        }
+                    ) {
                         scope.launch {
                             isApplying[idx] = true
                             try {
-                                val dc  = dutyCycles[idx].toInt()
                                 SshClient.execute(
                                     settings.host, settings.port,
                                     settings.username, settings.password,
-                                    buildPwmCommand(device.pin, dc),
+                                    stopPwmCommand(device.pin),
                                     settings.sshTimeoutMs
                                 )
-                                snackbarHostState.showSnackbar(context.getString(R.string.pwm_apply_success, device.name, dc, device.unit))
+                                dutyCycles[idx] = 0f
+                                snackbarHostState.showSnackbar(context.getString(R.string.pwm_stop_success, device.name))
                             } catch (e: Exception) {
                                 snackbarHostState.showSnackbar("❌ ${e.message}")
                             } finally {
                                 isApplying[idx] = false
                             }
-                        }
-                    }
-                ) {
-                    scope.launch {
-                        isApplying[idx] = true
-                        try {
-                            SshClient.execute(
-                                settings.host, settings.port,
-                                settings.username, settings.password,
-                                stopPwmCommand(device.pin),
-                                settings.sshTimeoutMs
-                            )
-                            dutyCycles[idx] = 0f
-                            snackbarHostState.showSnackbar(context.getString(R.string.pwm_stop_success, device.name))
-                        } catch (e: Exception) {
-                            snackbarHostState.showSnackbar("❌ ${e.message}")
-                        } finally {
-                            isApplying[idx] = false
                         }
                     }
                 }
@@ -160,7 +164,7 @@ private fun PwmDeviceCard(
     )
 
     Card(
-        modifier  = Modifier.fillMaxWidth(),
+        modifier  = Modifier.fillMaxWidth().animateContentSize(),
         shape     = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {

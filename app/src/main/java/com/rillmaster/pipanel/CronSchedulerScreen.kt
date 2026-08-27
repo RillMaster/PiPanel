@@ -1,10 +1,13 @@
 package com.rillmaster.pipanel
 
+import android.util.Base64
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -87,11 +90,12 @@ fun CronSchedulerScreen(
         val successMsg = context.getString(R.string.cron_save_success)
         scope.launch {
             loading = true
-            val crontabContent = updatedTasks.joinToString("\\n") { 
+            val crontabContent = updatedTasks.joinToString("\n") { 
                 "${it.minute} ${it.hour} ${it.dom} ${it.month} ${it.dow} ${it.command}"
             }
-            // Use a temporary file to update crontab safely
-            val cmd = "printf \"$crontabContent\\n\" | crontab -"
+            // Encodage en Base64 pour éviter tout problème d'injection ou de caractères spéciaux (comme les guillemets)
+            val encoded = Base64.encodeToString((crontabContent + "\n").toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            val cmd = "echo '$encoded' | base64 -d | crontab -"
             val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd, privateKey = settings.privateKey, keyPassphrase = settings.keyPassphrase)
             if (!res.startsWith("[err]")) {
                 snackbarHostState.showSnackbar(successMsg)
@@ -152,14 +156,16 @@ fun CronSchedulerScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(tasks) { task ->
-                        CronTaskCard(
-                            task = task,
-                            onClick = { taskToEdit = task },
-                            onDelete = {
-                                saveCrontab(tasks.filter { it.id != task.id })
-                            }
-                        )
+                    itemsIndexed(tasks) { index, task ->
+                        AnimatedEntrance(delayMillis = index * 50) {
+                            CronTaskCard(
+                                task = task,
+                                onClick = { taskToEdit = task },
+                                onDelete = {
+                                    saveCrontab(tasks.filter { it.id != task.id })
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -191,7 +197,7 @@ fun CronSchedulerScreen(
 @Composable
 fun CronTaskCard(task: CronTask, onClick: () -> Unit, onDelete: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        modifier = Modifier.fillMaxWidth().animateContentSize().clickable { onClick() },
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(

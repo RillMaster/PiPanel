@@ -3,13 +3,11 @@
 package com.rillmaster.pipanel
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
-import android.provider.Settings
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -35,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ListAlt
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -101,6 +100,7 @@ import com.rillmaster.pipanel.model.DrawerItemData
 import com.rillmaster.pipanel.model.Screen
 import com.rillmaster.pipanel.model.SystemStats
 import com.rillmaster.pipanel.model.fetchSystemStats
+import com.wireguard.android.backend.GoBackend
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  MainActivity
@@ -109,7 +109,11 @@ class MainActivity : FragmentActivity() {
 
     private var downloadProgress = mutableIntStateOf(-2)
 
+    /** Navigation demandée par un widget alors que l'app tourne déjà (via onNewIntent). */
+    private val pendingNavigation = mutableStateOf<Screen?>(null)
+
     companion object {
+        private const val TAG = "MainActivity"
         private const val REQUEST_CODE_NOTIF = 1001
 
         /** Extra d'intent pour ouvrir l'app directement sur un écran (ex : widgets). */
@@ -120,11 +124,11 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
 
-        // Maintenir le splash affiché le temps que l'animation de dessin se termine (~4000ms total)
+        // Le splash ne reste affiché qu'un court instant : l'animation de sortie (500ms)
+        // suffit à la transition visuelle, sans bloquer l'utilisateur inutilement.
         val splashStartTime = System.currentTimeMillis()
         splashScreen.setKeepOnScreenCondition {
-            val elapsed = System.currentTimeMillis() - splashStartTime
-            elapsed < 4000L
+            System.currentTimeMillis() - splashStartTime < 500L
         }
 
         super.onCreate(savedInstanceState)
@@ -164,7 +168,7 @@ class MainActivity : FragmentActivity() {
         requestNotificationPermissionIfNeeded()
         val settings = PiPanelApp.instance.settingsManager
 
-        if (settings.backgroundActivityEnabled) {
+        if (settings.backgroundActivityEnabled && !settings.isFirstLaunch) {
             if (settings.notificationsEnabled) {
                 MonitoringWorker.schedule(this)
             }
@@ -172,9 +176,13 @@ class MainActivity : FragmentActivity() {
             UpdateStatsWorker.schedulePeriodic(this)
             WidgetUpdateService.start(this)
         } else {
+            // Nettoyage immédiat si on est en onboarding ou si désactivé
             WorkManager.getInstance(this).cancelAllWork()
             WidgetUpdateService.stop(this)
+            MonitoringWorker.cancel(this)
         }
+
+        startService(Intent(this, VpnCleanupService::class.java))
 
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
@@ -206,8 +214,48 @@ class MainActivity : FragmentActivity() {
                     onAppReady = {
                         UpdateManager(this@MainActivity)
                             .checkForUpdates(this@MainActivity, lifecycleScope, downloadProgress)
+                        
+                        // Auto-connect VPN au lancement si configuré
+                        if (settingsR.vpnConfig.isNotBlank()) {
+                            lifecycleScope.launch {
+                                try {
+                                    val vpnManager = PiPanelApp.instance.vpnManager
+                                    vpnManager.refreshState()
+                                    // On ne lance que si c'est actuellement DOWN
+                                    // Note: GoBackend.VpnService.prepare(this) doit être null pour lancer sans intent
+                                    if (GoBackend.VpnService.prepare(this@MainActivity) == null) {
+                                        vpnManager.startTunnel(settingsR.vpnConfig)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
                     }
                 )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // Navigation profonde (widgets) quand l'app est déjà ouverte
+        intent.getStringExtra(EXTRA_NAVIGATE_TO)
+            ?.let { name -> runCatching { Screen.valueOf(name) }.getOrNull() }
+            ?.let { pendingNavigation.value = it }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Ne couper le VPN que si l'activité est réellement terminée (pas une simple
+        // rotation/recréation). On utilise applicationScope car lifecycleScope est
+        // annulé dès onDestroy et la coroutine risquerait de ne jamais s'exécuter.
+        if (isFinishing && !isChangingConfigurations) {
+            PiPanelApp.instance.applicationScope.launch {
+                try {
+                    PiPanelApp.instance.vpnManager.stopTunnel()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to stop VPN tunnel on destroy", e)
+                }
             }
         }
     }
@@ -364,10 +412,17 @@ class MainActivity : FragmentActivity() {
         onBiometricEnabled: () -> Unit
     ) {
         val currentScreen = remember {
-            // Navigation profonde depuis un widget (ex : widget Docker)
             val requested = activity.intent?.getStringExtra(EXTRA_NAVIGATE_TO)
                 ?.let { name -> runCatching { Screen.valueOf(name) }.getOrNull() }
             mutableStateOf(requested ?: if (settings.isConfigured()) Screen.CONTROL else Screen.SETTINGS)
+        }
+
+        val pending by pendingNavigation
+        LaunchedEffect(pending) {
+            pending?.let {
+                currentScreen.value = it
+                pendingNavigation.value = null
+            }
         }
         val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
         val scope = rememberCoroutineScope()
@@ -390,7 +445,6 @@ class MainActivity : FragmentActivity() {
 
         val drawerWidth = 300.dp
 
-        // Gestion du bouton retour système
         BackHandler(enabled = currentScreen.value != Screen.CONTROL || drawerState.isOpen) {
             if (drawerState.isOpen) {
                 scope.launch { drawerState.close() }
@@ -448,414 +502,6 @@ class MainActivity : FragmentActivity() {
                     onBiometricEnabled = onBiometricEnabled,
                     isExpanded = false
                 )
-            }
-        }
-    }
-
-    @Composable
-    private fun MainLayoutContent(
-        currentScreen: Screen,
-        settings: SettingsManager,
-        activity: FragmentActivity,
-        drawerState: DrawerState,
-        windowSizeClass: WindowSizeClass,
-        onNavigate: (Screen) -> Unit,
-        onThemeChanged: (String) -> Unit,
-        onBiometricEnabled: () -> Unit,
-        isExpanded: Boolean
-    ) {
-        val isWide = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
-        val scope = rememberCoroutineScope()
-        AnimatedContent(
-            targetState = currentScreen,
-            transitionSpec = {
-                if (targetState == Screen.CONTROL || targetState == Screen.ABOUT) {
-                    (slideInHorizontally { -it / 3 } + fadeIn())
-                        .togetherWith(slideOutHorizontally { it } + fadeOut())
-                } else {
-                    (slideInHorizontally { it } + fadeIn())
-                        .togetherWith(slideOutHorizontally { -it / 3 } + fadeOut())
-                }
-            },
-            label = "screen_transition"
-        ) { screen ->
-            when (screen) {
-                Screen.SETTINGS -> SettingsScreen(
-                    settings           = settings,
-                    activity           = activity,
-                    onThemeChanged     = onThemeChanged,
-                    onBiometricEnabled = onBiometricEnabled,
-                    onSave             = { onNavigate(Screen.CONTROL) },
-                    onOpenMenu         = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    isExpanded         = isExpanded
-                )
-                Screen.TERMINAL -> TerminalScreen(
-                    settings           = settings,
-                    onClose            = { onNavigate(Screen.CONTROL) },
-                    onOpenMenu         = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.DOCKER -> DockerScreen(
-                    settings           = settings,
-                    onClose            = { onNavigate(Screen.CONTROL) },
-                    onOpenMenu         = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.CHARTS -> ChartsScreen(
-                    onOpenMenu         = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.MONITORING -> MonitoringScreen(
-                    settings           = settings,
-                    onOpenMenu         = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded,
-                    isWide = isWide
-                )
-                Screen.PIHOLE_CONFIG -> PiHoleConfigScreen(
-                    settings = settings,
-                    onClose  = { onNavigate(Screen.PIHOLE) },
-                    onSaved  = { onNavigate(Screen.PIHOLE) }
-                )
-                Screen.PIHOLE -> PiHoleScreen(
-                    settings     = settings,
-                    onClose      = { onNavigate(Screen.CONTROL) },
-                    onOpenConfig = { onNavigate(Screen.PIHOLE_CONFIG) },
-                    onOpenMenu   = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.WIREGUARD -> WireGuardScreen(
-                    settings   = settings,
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.NOTIFS -> NotificationSettingsScreen(
-                    settings   = settings,
-                    onBack     = { onNavigate(Screen.CONTROL) },
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.PWM -> PwmSliderScreen(
-                    settings   = settings,
-                    onClose    = { onNavigate(Screen.CONTROL) },
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.GPIO_PLANNER -> GpioScheduleScreen(
-                    settings   = settings,
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.SENSORS -> SensorDashboardScreen(
-                    settings   = settings,
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.LOGS_VIEWER -> LogsViewerScreen(
-                    settings   = settings,
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.FAIL2BAN -> Fail2BanScreen(
-                    settings   = settings,
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.UFW -> UfwScreen(
-                    settings   = settings,
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.FILE_MANAGER -> FileManagerScreen(
-                    settings   = settings,
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.SERVICES -> ServicesScreen(
-                    settings   = settings,
-                    onClose    = { onNavigate(Screen.CONTROL) },
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.NETWORK_SCANNER -> NetworkScannerScreen(
-                    settings   = settings,
-                    onClose    = { onNavigate(Screen.CONTROL) },
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.CRON_SCHEDULER -> CronSchedulerScreen(
-                    settings   = settings,
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.WIFI_MANAGEMENT -> WifiManagementScreen(
-                    settings   = settings,
-                    onClose    = { onNavigate(Screen.CONTROL) },
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.PROFILES -> ProfilesScreen(
-                    settings   = settings,
-                    onClose    = { onNavigate(Screen.CONTROL) },
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    showNavigationIcon = !isExpanded
-                )
-                Screen.ABOUT -> AboutScreen(
-                    onLaunchEasterEgg = { onNavigate(Screen.EASTER_EGG_OCTOPUS) },
-                    onOpenMenu        = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    isExpanded        = isExpanded
-                )
-                Screen.EASTER_EGG_OCTOPUS -> OctopusEasterEggScreen(
-                    onClose = { onNavigate(Screen.ABOUT) }
-                )
-                Screen.CONTROL -> ControlScreen(
-                    settings              = settings,
-                    onOpenSettings        = { onNavigate(Screen.SETTINGS) },
-                    onOpenProfiles        = { onNavigate(Screen.PROFILES) },
-                    onOpenTerminal        = { onNavigate(Screen.TERMINAL) },
-                    onOpenDocker          = { onNavigate(Screen.DOCKER) },
-                    onOpenMonitoring      = { onNavigate(Screen.MONITORING) },
-                    onOpenPiHole          = { onNavigate(Screen.PIHOLE) },
-                    onOpenWireGuard       = { onNavigate(Screen.WIREGUARD) },
-                    onOpenPwmSlider       = { onNavigate(Screen.PWM) },
-                    onOpenGpioSchedule    = { onNavigate(Screen.GPIO_PLANNER) },
-                    onOpenSensorDashboard = { onNavigate(Screen.SENSORS) },
-                    onOpenNetworkScanner  = { onNavigate(Screen.NETWORK_SCANNER) },
-                    onOpenCronScheduler   = { onNavigate(Screen.CRON_SCHEDULER) },
-                    onOpenCharts          = { onNavigate(Screen.CHARTS) },
-                    onOpenMenu            = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    isExpanded            = isWide
-                )
-                Screen.SSH_KEYS -> SshKeysScreen(
-                    settings   = settings,
-                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
-                    isExpanded = isExpanded
-                )
-            }
-        }
-    }
-
-    @Composable
-    private fun AppDrawerContent(
-        currentScreen: Screen,
-        settings     : SettingsManager,
-        isCompactHeight: Boolean = false,
-        onNavigate   : (Screen) -> Unit
-    ) {
-        val context = LocalContext.current
-        val versionName = remember {
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0)).versionName
-                } else {
-                    @Suppress("DEPRECATION")
-                    context.packageManager.getPackageInfo(context.packageName, 0).versionName
-                } ?: "1.5.2"
-            } catch (_: Exception) { "1.5.2" }
-        }
-
-        Column(modifier = Modifier.fillMaxSize()) {
-            // ── Header du tiroir ──────────────────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f), Color.Transparent)
-                        )
-                    )
-                    .padding(
-                        top = if (isCompactHeight) 16.dp else 48.dp,
-                        bottom = if (isCompactHeight) 12.dp else 24.dp,
-                        start = 24.dp, end = 24.dp
-                    )
-            ) {
-                if (isCompactHeight) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Surface(
-                            modifier = Modifier.size(40.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            color = Color.White,
-                            shadowElevation = 2.dp
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.logo),
-                                contentDescription = null,
-                                modifier = Modifier.padding(6.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                            Text(
-                                text = stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Black,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = settings.host,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Surface(
-                            modifier = Modifier.size(64.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color.White,
-                            shadowElevation = 4.dp
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.logo),
-                                contentDescription = stringResource(R.string.logo_content_description),
-                                modifier = Modifier.padding(12.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Black,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF4CAF50))
-                                )
-                                Text(
-                                    text = "${settings.getCurrentProfile()?.name ?: settings.username}@${settings.host}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium,
-                                    fontFamily = FontFamily.Monospace,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ── Corps scrollable du tiroir ────────────────────────────
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Spacer(Modifier.height(8.dp))
-
-                // Dashboard
-                DrawerNavItem(
-                    item = DrawerItemData(stringResource(R.string.nav_dashboard), Icons.Default.GridView, MaterialTheme.colorScheme.primary, Screen.CONTROL),
-                    selected = currentScreen == Screen.CONTROL,
-                    onClick = { onNavigate(Screen.CONTROL) },
-                    settings = settings
-                )
-
-                DrawerNavItem(
-                    item = DrawerItemData(stringResource(R.string.nav_profiles), Icons.Default.Devices, MaterialTheme.colorScheme.secondary, Screen.PROFILES),
-                    selected = currentScreen == Screen.PROFILES,
-                    onClick = { onNavigate(Screen.PROFILES) },
-                    settings = settings
-                )
-
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                // Groupe GPIO
-                DrawerSectionLabel(stringResource(R.string.section_gpio))
-                val gpioItems = listOf(
-                    DrawerItemData(stringResource(R.string.nav_pwm), Icons.Default.Tune, Color(0xFF7C4DFF), Screen.PWM),
-                    DrawerItemData(stringResource(R.string.nav_gpio_planner), Icons.Default.Schedule, Color(0xFF00897B), Screen.GPIO_PLANNER),
-                    DrawerItemData(stringResource(R.string.nav_sensors), Icons.Default.Sensors, Color(0xFF1565C0), Screen.SENSORS),
-                )
-                gpioItems.forEach { item ->
-                    DrawerNavItem(item, selected = currentScreen == item.screen, onClick = { item.screen?.let { onNavigate(it) } }, settings = settings)
-                }
-
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                // Groupe Services
-                DrawerSectionLabel(stringResource(R.string.section_services))
-                val serviceItems = listOf(
-                    DrawerItemData(stringResource(R.string.nav_monitoring), Icons.Default.BarChart, Color(0xFF2196F3), Screen.MONITORING),
-                    DrawerItemData(stringResource(R.string.nav_charts), Icons.Default.ShowChart, Color(0xFF0097A7), Screen.CHARTS),
-                    DrawerItemData(stringResource(R.string.nav_docker), R.drawable.docker, Color(0xFF0288D1), Screen.DOCKER),
-                    DrawerItemData(stringResource(R.string.nav_services), Icons.Default.SettingsSuggest, Color(0xFF607D8B), Screen.SERVICES),
-                    DrawerItemData(stringResource(R.string.nav_file_manager), Icons.Default.Folder, Color(0xFFFFA000), Screen.FILE_MANAGER),
-                    DrawerItemData(stringResource(R.string.nav_pihole), R.drawable.ic_widget_pihole, Color(0xFFE53935), Screen.PIHOLE),
-                    DrawerItemData(stringResource(R.string.nav_wireguard), R.drawable.wireguard, Color(0xFF43A047), Screen.WIREGUARD),
-                    DrawerItemData(stringResource(R.string.nav_terminal), Icons.Default.Terminal, MaterialTheme.colorScheme.onSurface, Screen.TERMINAL),
-                    DrawerItemData(stringResource(R.string.nav_logs), Icons.AutoMirrored.Filled.ListAlt, Color(0xFF009688), Screen.LOGS_VIEWER),
-                )
-                serviceItems.forEach { item ->
-                    DrawerNavItem(item, selected = currentScreen == item.screen || (item.screen == Screen.PIHOLE && currentScreen == Screen.PIHOLE_CONFIG), onClick = { item.screen?.let { onNavigate(it) } }, settings = settings)
-                }
-
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                // Groupe Security
-                DrawerSectionLabel(stringResource(R.string.section_security))
-                val securityItems = listOf(
-                    DrawerItemData(stringResource(R.string.nav_ssh_keys), Icons.Default.Key, Color(0xFF1976D2), Screen.SSH_KEYS),
-                    DrawerItemData(stringResource(R.string.nav_fail2ban), Icons.Default.LockPerson, Color(0xFFD32F2F), Screen.FAIL2BAN),
-                    DrawerItemData(stringResource(R.string.nav_ufw), Icons.Default.Security, Color(0xFF388E3C), Screen.UFW),
-                )
-                securityItems.forEach { item ->
-                    DrawerNavItem(item, selected = currentScreen == item.screen, onClick = { item.screen?.let { onNavigate(it) } }, settings = settings)
-                }
-
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                // Groupe Utilitaires
-                DrawerSectionLabel(stringResource(R.string.section_config))
-                val configItems = listOf(
-                    DrawerItemData(stringResource(R.string.nav_net_scan), Icons.Default.NetworkCheck, Color(0xFF673AB7), Screen.NETWORK_SCANNER),
-                    DrawerItemData(stringResource(R.string.nav_wifi), Icons.Default.Wifi, Color(0xFF2196F3), Screen.WIFI_MANAGEMENT),
-                    DrawerItemData(stringResource(R.string.nav_cron), Icons.Default.Schedule, Color(0xFF8E24AA), Screen.CRON_SCHEDULER),
-                    DrawerItemData(stringResource(R.string.nav_notifs), Icons.Default.Notifications, Color(0xFFFF9800), Screen.NOTIFS),
-                    DrawerItemData(stringResource(R.string.nav_settings), Icons.Default.Settings, MaterialTheme.colorScheme.onSurface, Screen.SETTINGS),
-                    DrawerItemData(stringResource(R.string.nav_about), Icons.Default.Info, MaterialTheme.colorScheme.onSurface, Screen.ABOUT),
-                )
-                configItems.forEach { item ->
-                    DrawerNavItem(item, selected = currentScreen == item.screen, onClick = { item.screen?.let { onNavigate(it) } }, settings = settings)
-                }
-
-                Spacer(Modifier.height(16.dp))
-            }
-
-            // ── Footer du tiroir ──────────────────────────────────────
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.Info, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                    Text(
-                        text = stringResource(R.string.drawer_footer, settings.port, versionName),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                }
             }
         }
     }

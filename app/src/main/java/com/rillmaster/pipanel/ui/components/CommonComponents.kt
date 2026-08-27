@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -40,7 +41,47 @@ import com.rillmaster.pipanel.DashboardPrefs
 import com.rillmaster.pipanel.DashboardSection
 import com.rillmaster.pipanel.SshClient
 import com.rillmaster.pipanel.fetchPiHoleStatus
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+@Composable
+fun AnimatedEntrance(
+    delayMillis: Int = 0,
+    content: @Composable () -> Unit
+) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(delayMillis.toLong())
+        visible = true
+    }
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(600)) + slideInVertically(tween(600)) { it / 2 },
+        content = { content() }
+    )
+}
+
+@Composable
+fun PulseEffect(
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    content: @Composable () -> Unit
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Box(modifier = modifier.alpha(alpha)) {
+        content()
+    }
+}
 
 @Composable
 fun SectionTitle(text: String) {
@@ -83,12 +124,24 @@ fun SystemStatusBar(settings: SettingsManager, stats: SystemStats?, loading: Boo
                 verticalAlignment     = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(if (stats != null) Color(0xFF4CAF50) else if (loading) Color.Gray else Color.Red)
-                    )
+                    val statusColor = if (stats != null) Color(0xFF4CAF50) else if (loading) Color.Gray else Color.Red
+                    if (loading) {
+                        PulseEffect {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(statusColor)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(statusColor)
+                        )
+                    }
                     Text(
                         text       = settings.host,
                         style      = MaterialTheme.typography.titleMedium,
@@ -115,12 +168,15 @@ fun SystemStatusBar(settings: SettingsManager, stats: SystemStats?, loading: Boo
 
             Spacer(modifier = Modifier.height(18.dp))
 
+            // On n'anime que le passage de null (chargement) à non-null (données)
+            // pour éviter le clignotement à chaque mise à jour des valeurs.
+            val isDataReady = stats != null
             AnimatedContent(
-                targetState = stats,
-                transitionSpec = { fadeIn(animationSpec = tween(500)) togetherWith fadeOut(animationSpec = tween(500)) },
-                label = "stats_dashboard"
-            ) { s ->
-                if (s == null) {
+                targetState = isDataReady,
+                transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(400)) },
+                label = "stats_state"
+            ) { ready ->
+                if (!ready) {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center
@@ -138,14 +194,10 @@ fun SystemStatusBar(settings: SettingsManager, stats: SystemStats?, loading: Boo
                                 fontWeight = FontWeight.Bold,
                                 color = if (loading) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFEF5350)
                             )
-                            if (!loading) {
-                                Button(onClick = { /* Refresh logic already in LaunchedEffect */ }) {
-                                    Text(stringResource(R.string.action_retry))
-                                }
-                            }
                         }
                     }
                 } else {
+                    val s = stats!!
                     Column {
                         Row(
                             modifier              = Modifier.fillMaxWidth(),
@@ -163,13 +215,18 @@ fun SystemStatusBar(settings: SettingsManager, stats: SystemStats?, loading: Boo
 
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             // CPU
+                            val animatedCpuProgress by animateFloatAsState(
+                                targetValue = (s.cpuPercent / 100f).coerceIn(0f, 1f),
+                                animationSpec = tween(durationMillis = 1000, easing = LinearOutSlowInEasing),
+                                label = "cpu_progress"
+                            )
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                                     Text(stringResource(R.string.cpu_load), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Text("${s.cpuPercent}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                 }
                                 LinearProgressIndicator(
-                                    progress   = { (s.cpuPercent / 100f).coerceIn(0f, 1f) },
+                                    progress   = { animatedCpuProgress },
                                     modifier   = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
                                     color      = cpuColor,
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant
@@ -177,17 +234,22 @@ fun SystemStatusBar(settings: SettingsManager, stats: SystemStats?, loading: Boo
                             }
 
                             // RAM
-                            val ramPct = if (s.ramTotalMb > 0) s.ramUsedMb.toFloat() / s.ramTotalMb else 0f
-                            val ramColor = if (ramPct > 0.85f) Color(0xFFEF5350) else MaterialTheme.colorScheme.primary
+                            val ramPctValue = if (s.ramTotalMb > 0) s.ramUsedMb.toFloat() / s.ramTotalMb else 0f
+                            val animatedRamProgress by animateFloatAsState(
+                                targetValue = ramPctValue.coerceIn(0f, 1f),
+                                animationSpec = tween(durationMillis = 1000, easing = LinearOutSlowInEasing),
+                                label = "ram_progress"
+                            )
+                            val ramColorValue = if (ramPctValue > 0.85f) Color(0xFFEF5350) else MaterialTheme.colorScheme.primary
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                                     Text(stringResource(R.string.ram_memory), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("${(ramPct * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    Text("${(ramPctValue * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                 }
                                 LinearProgressIndicator(
-                                    progress   = { ramPct.coerceIn(0f, 1f) },
+                                    progress   = { animatedRamProgress },
                                     modifier   = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                                    color      = ramColor,
+                                    color      = ramColorValue,
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                                 )
                             }
@@ -265,55 +327,58 @@ fun DrawerSectionLabel(text: String) {
 fun DrawerNavItem(
     item: DrawerItemData,
     selected: Boolean,
+    index: Int = 0,
     onClick: () -> Unit,
     settings: SettingsManager? = null
 ) {
     val isInstalled = item.screen?.let { settings?.isServiceInstalled(it) } ?: true
 
-    NavigationDrawerItem(
-        icon = {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = if (selected) item.color.copy(alpha = 0.2f) else item.color.copy(alpha = 0.12f),
-                modifier = Modifier.size(38.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    when (val icon = item.icon) {
-                        is ImageVector -> Icon(
-                            imageVector = icon,
-                            contentDescription = item.label,
-                            tint = if (isInstalled) item.color else item.color.copy(alpha = 0.3f),
-                            modifier = Modifier.size(24.dp)
-                        )
-                        is Int -> Icon(
-                            painter = painterResource(id = icon),
-                            contentDescription = item.label,
-                            tint = if (isInstalled) item.color else item.color.copy(alpha = 0.3f),
-                            modifier = Modifier.size(24.dp)
-                        )
+    AnimatedEntrance(delayMillis = 100 + (index * 30)) {
+        NavigationDrawerItem(
+            icon = {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (selected) item.color.copy(alpha = 0.2f) else item.color.copy(alpha = 0.12f),
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        when (val icon = item.icon) {
+                            is ImageVector -> Icon(
+                                imageVector = icon,
+                                contentDescription = item.label,
+                                tint = if (isInstalled) item.color else item.color.copy(alpha = 0.3f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            is Int -> Icon(
+                                painter = painterResource(id = icon),
+                                contentDescription = item.label,
+                                tint = if (isInstalled) item.color else item.color.copy(alpha = 0.3f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
-            }
-        },
-        label = {
-            Text(
-                text = item.label,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (selected) FontWeight.Black else FontWeight.Bold,
-                modifier = Modifier.padding(start = 8.dp),
-                color = if (isInstalled) Color.Unspecified else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+            },
+            label = {
+                Text(
+                    text = item.label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (selected) FontWeight.Black else FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp),
+                    color = if (isInstalled) Color.Unspecified else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            selected = selected,
+            onClick = { if (isInstalled) onClick() },
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            colors = NavigationDrawerItemDefaults.colors(
+                unselectedContainerColor = Color.Transparent,
+                selectedContainerColor = item.color.copy(alpha = 0.1f)
             )
-        },
-        selected = selected,
-        onClick = { if (isInstalled) onClick() },
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        colors = NavigationDrawerItemDefaults.colors(
-            unselectedContainerColor = Color.Transparent,
-            selectedContainerColor = item.color.copy(alpha = 0.1f)
         )
-    )
+    }
 }
 
 @Composable

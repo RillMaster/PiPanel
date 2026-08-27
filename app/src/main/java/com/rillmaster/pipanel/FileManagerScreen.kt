@@ -16,6 +16,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,9 +41,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.rillmaster.pipanel.ui.components.MediaViewer
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -146,7 +149,7 @@ fun FileManagerScreen(
     }
 
     LaunchedEffect(currentPath, showHidden) {
-        refreshFiles(settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
+        refreshFiles(scope, settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
     }
 
     BackHandler(enabled = isSelectionMode || (editingFile == null && currentPath != "/")) {
@@ -190,7 +193,7 @@ fun FileManagerScreen(
                                         SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd)
                                     }
                                     selectedFiles = emptySet()
-                                    refreshFiles(settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
+                                    refreshFiles(scope, settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
                                 }
                             }) {
                                 Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
@@ -254,7 +257,7 @@ fun FileManagerScreen(
                             IconButton(onClick = { showHidden = !showHidden }) {
                                 Icon(if (showHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = null)
                             }
-                            IconButton(onClick = { refreshFiles(settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it }) }) {
+                            IconButton(onClick = { refreshFiles(scope, settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it }) }) {
                                 Icon(Icons.Default.Refresh, null)
                             }
                         }
@@ -298,70 +301,72 @@ fun FileManagerScreen(
                             Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
                             Spacer(Modifier.height(16.dp))
                             Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                            Button(onClick = { refreshFiles(settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it }) }, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.action_retry)) }
+                            Button(onClick = { refreshFiles(scope, settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it }) }, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.action_retry)) }
                         }
                     } else if (filteredFiles.isEmpty()) {
                         Text(stringResource(R.string.file_manager_empty), modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(filteredFiles) { file ->
+                            itemsIndexed(filteredFiles) { index, file ->
                                 val isSelected = selectedFiles.contains(file)
-                                FileItem(
-                                    file = file,
-                                    settings = settings,
-                                    isSelected = isSelected,
-                                    onClick = {
-                                        if (isSelectionMode) {
-                                            selectedFiles = if (isSelected) selectedFiles - file else selectedFiles + file
-                                        } else {
-                                            if (file.isDirectory) currentPath = file.path 
-                                            else handleFileClick(context, file, settings, scope, snackbarHostState,
-                                                onEdit = { c -> fileContent = c; editingFile = file; isFileLoading = false },
-                                                onMedia = { b, preview, local -> 
-                                                    mediaBitmap = b
-                                                    mediaFile = file
-                                                    localMediaFile = local
-                                                    isMediaPreview = preview
-                                                    isFileLoading = false
-                                                    isMediaLoading = false 
-                                                },
-                                                onLoading = { isFileLoading = it; isMediaLoading = it },
-                                                binaryMsg = binaryFileErrorMsg
-                                            )
-                                        }
-                                    },
-                                    onLongClick = {
-                                        if (!isSelectionMode) selectedFiles = setOf(file)
-                                    },
-                                    onDelete = {
-                                        scope.launch {
-                                            val cmd = if (file.isDirectory) "sudo rm -rf \"${file.path}\"" else "sudo rm \"${file.path}\""
-                                            SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd)
-                                            refreshFiles(settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
-                                        }
-                                    },
-                                    onRename = { renamingFile = file },
-                                    onChmod = { chmodFile = file },
-                                    onDownload = {
-                                        selectedFiles = setOf(file)
-                                        folderPickerLauncher.launch(null)
-                                    },
-                                    overrideSize = folderSizes[file.path],
-                                    onCalculateSize = {
-                                        if (file.isDirectory) {
-                                            isCalculatingSize = file.path
-                                            scope.launch(Dispatchers.IO) {
-                                                val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "sudo du -sh \"${file.path}\" | cut -f1")
-                                                withContext(Dispatchers.Main) {
-                                                    if (!res.startsWith("[err]")) {
-                                                        folderSizes[file.path] = res.trim()
+                                AnimatedEntrance(delayMillis = (index % 15) * 30) {
+                                    FileItem(
+                                        file = file,
+                                        settings = settings,
+                                        isSelected = isSelected,
+                                        onClick = {
+                                            if (isSelectionMode) {
+                                                selectedFiles = if (isSelected) selectedFiles - file else selectedFiles + file
+                                            } else {
+                                                if (file.isDirectory) currentPath = file.path 
+                                                else handleFileClick(context, file, settings, scope, snackbarHostState,
+                                                    onEdit = { c -> fileContent = c; editingFile = file; isFileLoading = false },
+                                                    onMedia = { b, preview, local -> 
+                                                        mediaBitmap = b
+                                                        mediaFile = file
+                                                        localMediaFile = local
+                                                        isMediaPreview = preview
+                                                        isFileLoading = false
+                                                        isMediaLoading = false 
+                                                    },
+                                                    onLoading = { isFileLoading = it; isMediaLoading = it },
+                                                    binaryMsg = binaryFileErrorMsg
+                                                )
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (!isSelectionMode) selectedFiles = setOf(file)
+                                        },
+                                        onDelete = {
+                                            scope.launch {
+                                                val cmd = if (file.isDirectory) "sudo rm -rf \"${file.path}\"" else "sudo rm \"${file.path}\""
+                                                SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd)
+                                                refreshFiles(scope, settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
+                                            }
+                                        },
+                                        onRename = { renamingFile = file },
+                                        onChmod = { chmodFile = file },
+                                        onDownload = {
+                                            selectedFiles = setOf(file)
+                                            folderPickerLauncher.launch(null)
+                                        },
+                                        overrideSize = folderSizes[file.path],
+                                        onCalculateSize = {
+                                            if (file.isDirectory) {
+                                                isCalculatingSize = file.path
+                                                scope.launch(Dispatchers.IO) {
+                                                    val res = SshClient.execute(settings.host, settings.port, settings.username, settings.password, "sudo du -sh \"${file.path}\" | cut -f1")
+                                                    withContext(Dispatchers.Main) {
+                                                        if (!res.startsWith("[err]")) {
+                                                            folderSizes[file.path] = res.trim()
+                                                        }
+                                                        isCalculatingSize = null
                                                     }
-                                                    isCalculatingSize = null
                                                 }
                                             }
                                         }
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
@@ -506,7 +511,7 @@ fun FileManagerScreen(
                         val cmd = if (isFolder) "mkdir -p \"$path\"" else "touch \"$path\""
                         SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd)
                         showCreateDialog = null
-                        refreshFiles(settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
+                        refreshFiles(scope, settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
                     }
                 }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_add)) }
             },
@@ -528,7 +533,7 @@ fun FileManagerScreen(
                         val cmd = "mv \"${file.path}\" \"$newPath\""
                         SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd)
                         renamingFile = null
-                        refreshFiles(settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
+                        refreshFiles(scope, settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
                     }
                 }, enabled = name.isNotBlank() && name != file.name) { Text(stringResource(R.string.file_manager_rename)) }
             },
@@ -591,7 +596,7 @@ fun FileManagerScreen(
                         val octal = "${toOctal(perms[1], perms[2], perms[3])}${toOctal(perms[4], perms[5], perms[6])}${toOctal(perms[7], perms[8], perms[9])}"
                         SshClient.execute(settings.host, settings.port, settings.username, settings.password, "sudo chmod $octal \"${file.path}\"")
                         chmodFile = null
-                        refreshFiles(settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
+                        refreshFiles(scope, settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
                     }
                 }) { Text(stringResource(R.string.action_apply)) }
             },
@@ -670,7 +675,9 @@ private fun enqueueUpload(context: Context, uri: Uri, targetDir: String, setting
             "host" to settings.host,
             "port" to settings.port,
             "user" to settings.username,
-            "pass" to settings.password
+            "pass" to settings.password,
+            "privateKey" to settings.privateKey,
+            "keyPass" to settings.keyPassphrase
         ))
         .build()
     WorkManager.getInstance(context).enqueue(workRequest)
@@ -688,7 +695,9 @@ private fun enqueueDownload(context: Context, file: RemoteFile, destTreeUri: Str
             "host" to settings.host,
             "port" to settings.port,
             "user" to settings.username,
-            "pass" to settings.password
+            "pass" to settings.password,
+            "privateKey" to settings.privateKey,
+            "keyPass" to settings.keyPassphrase
         ))
         .build()
     WorkManager.getInstance(context).enqueue(workRequest)
@@ -704,6 +713,7 @@ private fun getFileName(context: Context, uri: Uri): String {
 }
 
 private fun refreshFiles(
+    scope: CoroutineScope,
     settings: SettingsManager,
     path: String,
     showHidden: Boolean,
@@ -713,8 +723,7 @@ private fun refreshFiles(
 ) {
     onLoading(true)
     onError(null)
-    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
-    kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+    scope.launch(Dispatchers.IO) {
         try {
             // Script Python ultra-rapide pour la liste de base
             val pythonScript = """

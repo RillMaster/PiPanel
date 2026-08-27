@@ -1,6 +1,8 @@
 package com.rillmaster.pipanel
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -17,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -441,17 +443,19 @@ fun NetworkScannerScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(filteredDevices, key = { it.ip }) { device ->
-                            DeviceCard(
-                                device = device,
-                                isGateway = isGatewayIp(device.ip),
-                                onCopyIp = {
-                                    clipboard.setText(AnnotatedString(device.ip))
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Adresse IP copiée : ${device.ip}")
+                        itemsIndexed(filteredDevices, key = { _, it -> it.ip }) { index, device ->
+                            AnimatedEntrance(delayMillis = index * 50) {
+                                DeviceCard(
+                                    device = device,
+                                    isGateway = isGatewayIp(device.ip),
+                                    onCopyIp = {
+                                        clipboard.setText(AnnotatedString(device.ip))
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Adresse IP copiée : ${device.ip}")
+                                        }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -471,6 +475,7 @@ fun DeviceCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .animateContentSize()
             .combinedClickable(onClick = {}, onLongClick = onCopyIp),
         shape = RoundedCornerShape(16.dp)
     ) {

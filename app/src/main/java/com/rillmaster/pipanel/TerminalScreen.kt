@@ -1,15 +1,16 @@
 package com.rillmaster.pipanel
 
-import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -20,13 +21,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -36,14 +36,17 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import com.rillmaster.pipanel.ui.terminal.*
 import com.rillmaster.pipanel.ui.viewmodels.TerminalViewModel
+import com.rillmaster.pipanel.ui.components.AnimatedEntrance
+import com.rillmaster.pipanel.managers.ProfileManager
+import com.rillmaster.pipanel.managers.SshKeyManager
+import com.rillmaster.pipanel.ssh.SshClient
+import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -126,20 +129,26 @@ fun TerminalScreen(
     showNavigationIcon: Boolean = true
 ) {
     val context        = LocalContext.current
-    val viewModel      = remember { TerminalViewModel(settings) }
+    val viewModel      = remember(context) {
+        TerminalViewModel(
+            context,
+            SshKeyManager(context),
+            ProfileManager(context),
+            SshClient
+        )
+    }
     val uiState by viewModel.uiState.collectAsState()
     val emulator       = viewModel.emulator
 
-    val scope          = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
-
+    val configuration  = LocalConfiguration.current
+    val isSystemLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     fun forceShowKeyboard() {
         focusRequester.requestFocus()
         keyboardController?.show()
     }
-
 
     var ctrlActive  by remember { mutableStateOf(false) }
     var altActive   by remember { mutableStateOf(false) }
@@ -150,20 +159,10 @@ fun TerminalScreen(
     var termCols   by remember { mutableIntStateOf(80) }
     var termRows   by remember { mutableIntStateOf(24) }
 
-    val commandHistory   = viewModel.commandHistory
     val localShortcuts   = remember { settings.sshShortcuts.toMutableStateList() }
     var typedLine        by remember { mutableStateOf("") }
 
-    val showAddSnippet       = remember { mutableStateOf(false) }
-    val editSnippetIndex     = remember { mutableStateOf<Int?>(null) }
-
-    // Recherche d'historique (Ctrl+R)
-    var isHistorySearchActive by remember { mutableStateOf(false) }
-    var historySearchQuery    by remember { mutableStateOf("") }
-    val filteredHistory = remember(historySearchQuery, commandHistory.entries) {
-        if (historySearchQuery.isEmpty()) emptyList()
-        else commandHistory.entries.asReversed().filter { it.contains(historySearchQuery, ignoreCase = true) }.take(10)
-    }
+    val showAddSnippet   = remember { mutableStateOf(false) }
 
     var cursorVisible by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
@@ -189,25 +188,13 @@ fun TerminalScreen(
     }
 
     fun toggleRotation() {
-        val activity = context as? android.app.Activity
+        val activity = context as? Activity
         if (isLandscape) {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             isLandscape = false
         } else {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             isLandscape = true
-        }
-    }
-
-    fun pasteFromClipboard() {
-        val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        val text = clip.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
-        if (text.isNotEmpty()) viewModel.sendRaw(text)
-    }
-
-    fun sendCommand(cmd: String) {
-        if (cmd.isNotBlank()) {
-            viewModel.sendCommand(cmd)
         }
     }
 
@@ -236,7 +223,7 @@ fun TerminalScreen(
                 }
             }
 
-            // Le modificateur ne s'applique qu'à une seule frappe.
+            // Le modificateur ne s'lique qu'à une seule frappe.
             ctrlActive = false
             altActive = false
             typedLine = ""
@@ -290,19 +277,6 @@ fun TerminalScreen(
                     IconButton(onClick = { if (fontSize < 22f) fontSize += 1f }) {
                         Text("A+", color = TerminalGreen.copy(0.75f), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                     }
-                    IconButton(onClick = { emulator.fullReset(); viewModel.resize(termCols, termRows) }) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "Clear", tint = TerminalGreen.copy(0.75f))
-                    }
-                    IconButton(
-                        onClick = { if (uiState.isConnected) pasteFromClipboard() },
-                        enabled = uiState.isConnected
-                    ) {
-                        Icon(
-                            Icons.Default.ContentPaste,
-                            contentDescription = stringResource(R.string.action_paste),
-                            tint = if (uiState.isConnected) TerminalGreen.copy(0.75f) else Color(0xFF3A3A3A)
-                        )
-                    }
                     if (!uiState.isConnected && !uiState.isReconnecting) {
                         IconButton(onClick = {
                             viewModel.connect(context)
@@ -343,135 +317,185 @@ fun TerminalScreen(
                     tonalElevation = 4.dp,
                     modifier = Modifier.imePadding()
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        // 1. Barre Ctrl/Alt/Esc/Tab
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            TerminalKeyButton("Ctrl", active = ctrlActive) {
-                                ctrlActive = !ctrlActive
-                                if (ctrlActive) altActive = false
-                                forceShowKeyboard()
-                            }
-                            TerminalKeyButton("Alt", active = altActive) {
-                                altActive = !altActive
-                                if (altActive) ctrlActive = false
-                                forceShowKeyboard()
-                            }
-                            SPECIAL_KEYS.forEach { (label, code) ->
-                                TerminalKeyButton(label) {
-                                    viewModel.sendRaw(code)
-                                    forceShowKeyboard()
-                                }
-                            }
-                        }
-
-                        // 2. Barre des raccourcis (ls, top...)
-                        ScrollableRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            localShortcuts.forEachIndexed { idx, snip ->
-                                val color = shortcutColor(idx)
-                                Button(
-                                    onClick = { runShortcut(snip) },
-                                    modifier = Modifier.height(32.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = color.copy(alpha = 0.15f),
-                                        contentColor = color
-                                    ),
-                                    border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+                    AnimatedEntrance {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            if (isSystemLandscape) {
+                                // En paysage, on fusionne tout sur une ligne pour gagner de la place
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    Text(snip.label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                            IconButton(
-                                onClick = { showAddSnippet.value = true },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(Icons.Default.Add, null, tint = TerminalGreen, modifier = Modifier.size(18.dp))
-                            }
-                        }
-
-                        // 3. Zone de saisie principale (en bas, proche du clavier)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.Black.copy(0.3f))
-                                .padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = typedLine,
-                                onValueChange = ::handleTypedLineChange,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .focusRequester(focusRequester),
-                                textStyle = TextStyle(
-                                    color = TerminalGreen,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 15.sp
-                                ),
-                                placeholder = { Text("Command...", color = Color.Gray, fontSize = 14.sp) },
-                                leadingIcon = { Text("> ", color = TerminalGreen, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp)) },
-                                trailingIcon = {
-                                    if (typedLine.isNotEmpty()) {
-                                        IconButton(onClick = { typedLine = "" }) {
-                                            Icon(Icons.Default.Clear, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                                    TerminalKeyButton("Ctrl", active = ctrlActive) {
+                                        ctrlActive = !ctrlActive
+                                        if (ctrlActive) altActive = false
+                                        forceShowKeyboard()
+                                    }
+                                    TerminalKeyButton("Alt", active = altActive) {
+                                        altActive = !altActive
+                                        if (altActive) ctrlActive = false
+                                        forceShowKeyboard()
+                                    }
+                                    SPECIAL_KEYS.forEach { (label, code) ->
+                                        TerminalKeyButton(label) {
+                                            viewModel.sendRaw(code)
+                                            forceShowKeyboard()
                                         }
                                     }
-                                },
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = TerminalGreen,
-                                    unfocusedBorderColor = Color.DarkGray,
-                                    cursorColor = TerminalGreen
-                                ),
-                                keyboardOptions = KeyboardOptions(
-                                    autoCorrect = false,
-                                    keyboardType = KeyboardType.Ascii,
-                                    imeAction = ImeAction.Send
-                                ),
-                                keyboardActions = KeyboardActions(onSend = {
-                                    if (typedLine.isNotEmpty()) {
-                                        viewModel.sendCommand(typedLine)
-                                        typedLine = ""
+                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color.Gray.copy(0.3f)))
+                                    localShortcuts.forEachIndexed { idx, snip ->
+                                        val color = shortcutColor(idx)
+                                        Button(
+                                            onClick = { runShortcut(snip) },
+                                            modifier = Modifier.height(28.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            shape = RoundedCornerShape(6.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = color.copy(alpha = 0.15f),
+                                                contentColor = color
+                                            )
+                                        ) {
+                                            Text(snip.label, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
                                     }
-                                }),
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp)
-                            )
-
-                            Spacer(Modifier.width(8.dp))
-
-                            IconButton(
-                                onClick = {
-                                    if (typedLine.isNotEmpty()) {
-                                        viewModel.sendCommand(typedLine)
-                                        typedLine = ""
+                                }
+                            } else {
+                                // 1. Barre Ctrl/Alt/Esc/Tab (Portrait)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    TerminalKeyButton("Ctrl", active = ctrlActive) {
+                                        ctrlActive = !ctrlActive
+                                        if (ctrlActive) altActive = false
+                                        forceShowKeyboard()
                                     }
-                                },
-                                enabled = uiState.isConnected && typedLine.isNotEmpty(),
+                                    TerminalKeyButton("Alt", active = altActive) {
+                                        altActive = !altActive
+                                        if (altActive) ctrlActive = false
+                                        forceShowKeyboard()
+                                    }
+                                    SPECIAL_KEYS.forEach { (label, code) ->
+                                        TerminalKeyButton(label) {
+                                            viewModel.sendRaw(code)
+                                            forceShowKeyboard()
+                                        }
+                                    }
+                                }
+
+                                // 2. Barre des raccourcis (ls, top...) (Portrait)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    localShortcuts.forEachIndexed { idx, snip ->
+                                        val color = shortcutColor(idx)
+                                        Button(
+                                            onClick = { runShortcut(snip) },
+                                            modifier = Modifier.height(32.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = color.copy(alpha = 0.15f),
+                                                contentColor = color
+                                            ),
+                                            border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+                                        ) {
+                                            Text(snip.label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { showAddSnippet.value = true },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, null, tint = TerminalGreen, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+
+                            // 3. Zone de saisie principale
+                            Row(
                                 modifier = Modifier
-                                    .size(48.dp)
-                                    .background(
-                                        if (typedLine.isNotEmpty()) TerminalGreen.copy(0.2f) else Color.Transparent,
-                                        RoundedCornerShape(12.dp)
-                                    )
+                                    .fillMaxWidth()
+                                    .background(Color.Black.copy(0.3f))
+                                    .padding(if (isSystemLandscape) 4.dp else 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send",
-                                    tint = if (uiState.isConnected && typedLine.isNotEmpty()) TerminalGreen else Color.Gray
+                                OutlinedTextField(
+                                    value = typedLine,
+                                    onValueChange = ::handleTypedLineChange,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(focusRequester),
+                                    textStyle = TextStyle(
+                                        color = TerminalGreen,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = if (isSystemLandscape) 13.sp else 15.sp
+                                    ),
+                                    placeholder = { Text("Command...", color = Color.Gray, fontSize = 14.sp) },
+                                    leadingIcon = { Text("> ", color = TerminalGreen, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp)) },
+                                    trailingIcon = {
+                                        if (typedLine.isNotEmpty()) {
+                                            IconButton(onClick = { typedLine = "" }, modifier = Modifier.size(if (isSystemLandscape) 24.dp else 32.dp)) {
+                                                Icon(Icons.Default.Clear, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                                            }
+                                        }
+                                    },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TerminalGreen,
+                                        unfocusedBorderColor = Color.DarkGray,
+                                        cursorColor = TerminalGreen
+                                    ),
+                                    keyboardOptions = KeyboardOptions(
+                                        autoCorrectEnabled = false,
+                                        keyboardType = KeyboardType.Ascii,
+                                        imeAction = ImeAction.Send
+                                    ),
+                                    keyboardActions = KeyboardActions(onSend = {
+                                        if (typedLine.isNotEmpty()) {
+                                            viewModel.sendCommand(typedLine)
+                                            typedLine = ""
+                                        }
+                                    }),
+                                    minLines = 1,
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(if (isSystemLandscape) 8.dp else 12.dp)
                                 )
+
+                                Spacer(Modifier.width(if (isSystemLandscape) 4.dp else 8.dp))
+
+                                IconButton(
+                                    onClick = {
+                                        if (typedLine.isNotEmpty()) {
+                                            viewModel.sendCommand(typedLine)
+                                            typedLine = ""
+                                        }
+                                    },
+                                    enabled = uiState.isConnected && typedLine.isNotEmpty(),
+                                    modifier = Modifier
+                                        .size(if (isSystemLandscape) 36.dp else 48.dp)
+                                        .background(
+                                            if (typedLine.isNotEmpty()) TerminalGreen.copy(0.2f) else Color.Transparent,
+                                            RoundedCornerShape(if (isSystemLandscape) 8.dp else 12.dp)
+                                        )
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Send",
+                                        tint = if (uiState.isConnected && typedLine.isNotEmpty()) TerminalGreen else Color.Gray,
+                                        modifier = Modifier.size(if (isSystemLandscape) 20.dp else 24.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -496,28 +520,14 @@ fun TerminalScreen(
                 }
         ) {
             SelectionContainer {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
-                ) {
-                    items(scrollbackSnapshot.size, key = { "sb_$it" }) { idx ->
-                        Text(
-                            text = scrollbackSnapshot[idx],
-                            style = TextStyle(
-                                color      = TERM_DEFAULT_FG,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize   = fontSize.sp,
-                                lineHeight = (fontSize * 1.2f).sp
-                            )
-                        )
-                    }
-                    items(screenLines.size, key = { "sr_$it" }) { idx ->
-                        val line = screenLines[idx]
-                        val showCursorHere = uiState.isConnected && idx == cursorRow && cursorVisible && emulator.getCursorVisible()
-
-                        Box {
+                AnimatedEntrance {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
+                    ) {
+                        items(scrollbackSnapshot.size, key = { "sb_$it" }) { idx ->
                             Text(
-                                text = line,
+                                text = scrollbackSnapshot[idx],
                                 style = TextStyle(
                                     color      = TERM_DEFAULT_FG,
                                     fontFamily = FontFamily.Monospace,
@@ -525,14 +535,30 @@ fun TerminalScreen(
                                     lineHeight = (fontSize * 1.2f).sp
                                 )
                             )
-                            if (showCursorHere) {
-                                val cw = with(density) { fontSize.sp.toPx() * 0.6f }
-                                Box(
-                                    modifier = Modifier
-                                        .offset(x = with(density) { (cursorCol * cw).toDp() })
-                                        .size(with(density) { (cw / 1.5f).toDp() }, fontSize.dp)
-                                        .background(TerminalGreen.copy(0.5f))
+                        }
+                        items(screenLines.size, key = { "sr_$it" }) { idx ->
+                            val line = screenLines[idx]
+                            val showCursorHere = uiState.isConnected && idx == cursorRow && cursorVisible && emulator.getCursorVisible()
+
+                            Box {
+                                Text(
+                                    text = line,
+                                    style = TextStyle(
+                                        color      = TERM_DEFAULT_FG,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize   = fontSize.sp,
+                                        lineHeight = (fontSize * 1.2f).sp
+                                    )
                                 )
+                                if (showCursorHere) {
+                                    val cw = with(density) { fontSize.sp.toPx() * 0.6f }
+                                    Box(
+                                        modifier = Modifier
+                                            .offset(x = with(density) { (cursorCol * cw).toDp() })
+                                            .size(with(density) { (cw / 1.5f).toDp() }, fontSize.dp)
+                                            .background(TerminalGreen.copy(0.5f))
+                                    )
+                                }
                             }
                         }
                     }
@@ -563,7 +589,7 @@ fun TerminalScreen(
             initialCommand = "",
             title = stringResource(R.string.snippet_new_title),
             onConfirm = { l, c ->
-                val news = SshShortcut(id = java.util.UUID.randomUUID().toString(), label = l, commands = listOf(c))
+                val news = SshShortcut(id = UUID.randomUUID().toString(), label = l, commands = listOf(c))
                 localShortcuts.add(news)
                 settings.sshShortcuts = localShortcuts.toList()
                 showAddSnippet.value = false
@@ -589,20 +615,5 @@ private fun TerminalKeyButton(
         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
             Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
         }
-    }
-}
-
-@Composable
-private fun ScrollableRow(
-    modifier: Modifier = Modifier,
-    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
-    content: @Composable () -> Unit
-) {
-    Row(
-        modifier = modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = horizontalArrangement,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        content()
     }
 }

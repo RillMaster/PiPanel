@@ -279,8 +279,12 @@ class TerminalEmulator(var cols: Int, var rows: Int) {
                 22          -> bold = false
                 24          -> underline = false
                 27          -> reverse = false
+                39          -> currentFg = null
+                49          -> currentBg = null
                 in 30..37   -> currentFg = ansiIndex(code - 30)
                 in 40..47   -> currentBg = ansiIndex(code - 40)
+                in 90..97   -> currentFg = ansiIndex(code - 90 + 8)
+                in 100..107 -> currentBg = ansiIndex(code - 100 + 8)
                 38          -> when {
                     i + 2 < params.size && params[i + 1] == 5 -> { currentFg = ansi256(params[i + 2]); i += 2 }
                     i + 4 < params.size && params[i + 1] == 2 -> { currentFg = Color(params[i + 2], params[i + 3], params[i + 4]); i += 4 }

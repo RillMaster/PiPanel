@@ -16,8 +16,8 @@ android {
         applicationId = "com.rillmaster.pipanel"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.5.4"
+        versionCode = 17
+        versionName = "1.5.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -35,11 +35,14 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
+    buildToolsVersion = "36.0.0"
 }
 
 kotlin {
@@ -93,6 +96,9 @@ dependencies {
     implementation(libs.guava)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
+
+    implementation(libs.wireguard.tunnel)
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     implementation(libs.androidx.datastore.preferences)
 
