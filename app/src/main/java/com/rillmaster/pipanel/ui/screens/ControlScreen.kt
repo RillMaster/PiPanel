@@ -53,6 +53,7 @@ fun ControlScreen(
 ) {
     val viewModel: ControlViewModel = remember { ControlViewModel(settings) }
     val uiState by viewModel.uiState.collectAsState()
+    var editMode by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val dashConfig by DashboardPrefs.flow(context)
@@ -75,7 +76,6 @@ fun ControlScreen(
                     }
                 },
                 actions = {
-                    var editMode by remember { mutableStateOf(false) }
                     IconButton(onClick = { editMode = !editMode }) {
                         Icon(
                             if (editMode) Icons.Default.Check else Icons.Default.Edit,
@@ -93,8 +93,6 @@ fun ControlScreen(
             )
         }
     ) { padding ->
-        var editMode by remember { mutableStateOf(false) }
-
         if (editMode) {
             DashboardEditList(
                 config   = dashConfig,

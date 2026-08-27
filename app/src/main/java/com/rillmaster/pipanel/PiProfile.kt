@@ -14,9 +14,11 @@ data class PiProfile(
     val privateKey: String = "",
     /** Passphrase de la clé privée (si protégée). */
     val keyPassphrase: String = "",
+    /** ID de la clé SSH gérée par SshKeyManager. */
+    val sshKeyId: String? = null,
     /** Raccourcis SSH spécifiques à ce profil. */
     val shortcuts: List<SshShortcut>? = null
 ) {
     /** True si ce profil utilise une clé SSH plutôt qu'un mot de passe. */
-    val useSshKey: Boolean get() = privateKey.isNotBlank()
+    val useSshKey: Boolean get() = privateKey.isNotBlank() || sshKeyId != null
 }

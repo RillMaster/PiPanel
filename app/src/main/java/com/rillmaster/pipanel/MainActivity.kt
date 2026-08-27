@@ -587,6 +587,12 @@ class MainActivity : FragmentActivity() {
                     onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
                     showNavigationIcon = !isExpanded
                 )
+                Screen.WIFI_MANAGEMENT -> WifiManagementScreen(
+                    settings   = settings,
+                    onClose    = { onNavigate(Screen.CONTROL) },
+                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
+                    showNavigationIcon = !isExpanded
+                )
                 Screen.PROFILES -> ProfilesScreen(
                     settings   = settings,
                     onClose    = { onNavigate(Screen.CONTROL) },
@@ -618,6 +624,11 @@ class MainActivity : FragmentActivity() {
                     onOpenCharts          = { onNavigate(Screen.CHARTS) },
                     onOpenMenu            = { if (!isExpanded) scope.launch { drawerState.open() } },
                     isExpanded            = isWide
+                )
+                Screen.SSH_KEYS -> SshKeysScreen(
+                    settings   = settings,
+                    onOpenMenu = { if (!isExpanded) scope.launch { drawerState.open() } },
+                    isExpanded = isExpanded
                 )
             }
         }
@@ -801,6 +812,7 @@ class MainActivity : FragmentActivity() {
                 // Groupe Security
                 DrawerSectionLabel(stringResource(R.string.section_security))
                 val securityItems = listOf(
+                    DrawerItemData(stringResource(R.string.nav_ssh_keys), Icons.Default.Key, Color(0xFF1976D2), Screen.SSH_KEYS),
                     DrawerItemData(stringResource(R.string.nav_fail2ban), Icons.Default.LockPerson, Color(0xFFD32F2F), Screen.FAIL2BAN),
                     DrawerItemData(stringResource(R.string.nav_ufw), Icons.Default.Security, Color(0xFF388E3C), Screen.UFW),
                 )
@@ -815,6 +827,7 @@ class MainActivity : FragmentActivity() {
                 DrawerSectionLabel(stringResource(R.string.section_config))
                 val configItems = listOf(
                     DrawerItemData(stringResource(R.string.nav_net_scan), Icons.Default.NetworkCheck, Color(0xFF673AB7), Screen.NETWORK_SCANNER),
+                    DrawerItemData(stringResource(R.string.nav_wifi), Icons.Default.Wifi, Color(0xFF2196F3), Screen.WIFI_MANAGEMENT),
                     DrawerItemData(stringResource(R.string.nav_cron), Icons.Default.Schedule, Color(0xFF8E24AA), Screen.CRON_SCHEDULER),
                     DrawerItemData(stringResource(R.string.nav_notifs), Icons.Default.Notifications, Color(0xFFFF9800), Screen.NOTIFS),
                     DrawerItemData(stringResource(R.string.nav_settings), Icons.Default.Settings, MaterialTheme.colorScheme.onSurface, Screen.SETTINGS),

@@ -104,11 +104,13 @@ class TerminalViewModel(
                 _uiState.update { it.copy(isConnected = false) }
                 session = null
                 if (!userClosedManually && _uiState.value.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+                    val currentAttempt = _uiState.value.reconnectAttempt + 1
+                    val msg = context.getString(R.string.status_reconnecting, currentAttempt, MAX_RECONNECT_ATTEMPTS)
+                    emulator.process("\r\n\u001B[33m[ $msg ]\u001B[0m\r\n")
                     _uiState.update { it.copy(
                         isReconnecting = true,
-                        status = context.getString(R.string.status_reconnecting, it.reconnectAttempt + 1, MAX_RECONNECT_ATTEMPTS)
+                        status = msg
                     ) }
-                    val currentAttempt = _uiState.value.reconnectAttempt + 1
                     delay(getNextDelay(currentAttempt).milliseconds)
                     if (!userClosedManually) {
                         _uiState.update { it.copy(reconnectAttempt = currentAttempt) }
@@ -179,6 +181,7 @@ class TerminalViewModel(
         }
     }
 
+    /** Envoie une commande texte suivie d'un retour à la ligne. */
     fun sendCommand(command: String) {
         val sess = session
         if (command.isNotBlank()) {
@@ -187,7 +190,7 @@ class TerminalViewModel(
             settings.saveCommandHistory(profileId, commandHistory.entries)
         }
         if (sess != null && _uiState.value.isConnected) {
-            viewModelScope.launch { sess.send(command) }
+            viewModelScope.launch { sess.sendRaw(command + "\n") }
         }
     }
 

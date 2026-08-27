@@ -1,23 +1,76 @@
 package com.rillmaster.pipanel.ui.terminal
 
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 
-val TerminalGreen = Color(0xFF50FA7B)
-val TerminalBg    = Color(0xFF1A1A1A)
+data class TerminalTheme(
+    val name: String,
+    val background: Color,
+    val foreground: Color,
+    val cursor: Color,
+    val ansiColors: Array<Color>
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as TerminalTheme
+        if (name != other.name) return false
+        return true
+    }
 
-val ANSI_COLORS = arrayOf(
-    Color(0xFF000000), Color(0xFFFF5555), Color(0xFF50FA7B), Color(0xFFF1FA8C),
-    Color(0xFFBD93F9), Color(0xFFFF79C6), Color(0xFF8BE9FD), Color(0xFFBFBFBF),
-    Color(0xFF4D4D4D), Color(0xFFFF6E67), Color(0xFF5AF78E), Color(0xFFF4F99D),
-    Color(0xFFCAA9FA), Color(0xFFFF92D0), Color(0xFF9AEDFE), Color(0xFFFFFFFF)
+    override fun hashCode(): Int = name.hashCode()
+}
+
+val DraculaTheme = TerminalTheme(
+    name = "Dracula",
+    background = Color(0xFF282A36),
+    foreground = Color(0xFFF8F8F2),
+    cursor = Color(0xFF50FA7B),
+    ansiColors = arrayOf(
+        Color(0xFF000000), Color(0xFFFF5555), Color(0xFF50FA7B), Color(0xFFF1FA8C),
+        Color(0xFFBD93F9), Color(0xFFFF79C6), Color(0xFF8BE9FD), Color(0xFFBFBFBF),
+        Color(0xFF4D4D4D), Color(0xFFFF6E67), Color(0xFF5AF78E), Color(0xFFF4F99D),
+        Color(0xFFCAA9FA), Color(0xFFFF92D0), Color(0xFF9AEDFE), Color(0xFFFFFFFF)
+    )
 )
-val TERM_DEFAULT_FG = Color(0xFFF8F8F2)
 
-fun ansiIndex(i: Int) = ANSI_COLORS.getOrElse(i) { TERM_DEFAULT_FG }
+val SolarizedDarkTheme = TerminalTheme(
+    name = "Solarized Dark",
+    background = Color(0xFF002B36),
+    foreground = Color(0xFF839496),
+    cursor = Color(0xFF93A1A1),
+    ansiColors = arrayOf(
+        Color(0xFF073642), Color(0xFFDC322F), Color(0xFF859900), Color(0xFFB58900),
+        Color(0xFF268BD2), Color(0xFFD33682), Color(0xFF2AA198), Color(0xFFEEE8D5),
+        Color(0xFF002B36), Color(0xFFCB4B16), Color(0xFF586E75), Color(0xFF657B83),
+        Color(0xFF839496), Color(0xFF6C71C4), Color(0xFF93A1A1), Color(0xFFFDF6E3)
+    )
+)
+
+val MonokaiTheme = TerminalTheme(
+    name = "Monokai",
+    background = Color(0xFF272822),
+    foreground = Color(0xFFF8F8F2),
+    cursor = Color(0xFFF8F8F0),
+    ansiColors = arrayOf(
+        Color(0xFF272822), Color(0xFFF92672), Color(0xFFA6E22E), Color(0xFFF4BF75),
+        Color(0xFF66D9EF), Color(0xFFAE81FF), Color(0xFFA1EFE4), Color(0xFFF8F8F2),
+        Color(0xFF75715E), Color(0xFFF92672), Color(0xFFA6E22E), Color(0xFFE6DB74),
+        Color(0xFF66D9EF), Color(0xFFAE81FF), Color(0xFFA1EFE4), Color(0xFFF9F8F5)
+    )
+)
+
+val TerminalThemes = listOf(DraculaTheme, SolarizedDarkTheme, MonokaiTheme)
+
+var CurrentTerminalTheme by mutableStateOf(DraculaTheme)
+
+val TerminalGreen get() = CurrentTerminalTheme.cursor
+val TerminalBg    get() = CurrentTerminalTheme.background
+val TERM_DEFAULT_FG get() = CurrentTerminalTheme.foreground
+
+fun ansiIndex(i: Int) = CurrentTerminalTheme.ansiColors.getOrElse(i) { TERM_DEFAULT_FG }
 
 fun ansi256(i: Int): Color = when {
     i < 16  -> ansiIndex(i)
@@ -76,8 +129,26 @@ private val COMMON_COMMANDS = listOf(
 
 fun computeSuggestions(input: String, history: List<String>): List<String> {
     if (input.isBlank()) return emptyList()
+    
+    val parts = input.split(" ")
+    val lastPart = parts.last()
+    
+    // Si l'entrée finit par un espace, on propose des commandes communes ou des flags
+    if (input.endsWith(" ")) {
+        return listOf("-h", "--help", "sudo ", "&& ", "| grep ")
+    }
+
     val all = (history.asReversed() + COMMON_COMMANDS).distinct()
-    return all.filter { it.startsWith(input, ignoreCase = true) && it != input }.take(5)
+    
+    // Suggestions basées sur le début de la commande complète
+    val cmdSuggestions = all.filter { it.startsWith(input, ignoreCase = true) && it != input }
+    
+    // Suggestions basées sur le dernier mot (utile pour les chemins ou sous-commandes)
+    val wordSuggestions = if (lastPart.length >= 2) {
+         COMMON_COMMANDS.map { it.trim() }.filter { it.startsWith(lastPart, ignoreCase = true) }
+    } else emptyList()
+
+    return (cmdSuggestions + wordSuggestions).distinct().take(6)
 }
 
 val SPECIAL_KEYS = listOf(

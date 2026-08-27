@@ -1,5 +1,8 @@
 <resources>
     <string name="app_name">PiPanel</string>
+    <string name="tile_label_1">PiPanel · SSH 1</string>
+    <string name="tile_label_2">PiPanel · SSH 2</string>
+    <string name="tile_label_3">PiPanel · SSH 3</string>
     <string name="desc_widget_stats">Surveillance CPU, RAM et Température en temps réel.</string>
     <string name="desc_widget_pihole">Contrôle rapide et statistiques de blocage Pi-hole.</string>
     <string name="desc_widget_wireguard">Activer/Désactiver le VPN WireGuard et voir les clients.</string>
@@ -89,7 +92,17 @@
     <string name="settings_security_title">Sécurité</string>
     <string name="settings_biometric_label">Biométrie</string>
     <string name="settings_refresh_title">Rafraîchissement température</string>
+    <string name="settings_monitoring_service_title">Monitoring persistant</string>
+    <string name="settings_monitoring_service_label">Garder le monitoring en barre de statut</string>
     <string name="settings_shortcuts_title">Raccourcis terminal</string>
+    <string name="settings_tiles_title">Tuiles Quick Settings</string>
+    <string name="settings_tiles_slot">Tuile %1$d</string>
+    <string name="settings_tiles_hint">Ajoutez les tuiles depuis le panneau Quick Settings Android (mode édition).</string>
+    <string name="tile_running">Exécution…</string>
+    <string name="tile_done">Terminé ✓</string>
+    <string name="tile_error">Erreur ✗</string>
+    <string name="tile_not_configured">Non configuré</string>
+    <string name="tile_empty_slot">Tuile %1$d (vide)</string>
     <string name="settings_background_title">Activité en arrière-plan</string>
     <string name="settings_background_label">Activer les tâches de fond</string>
     <string name="settings_battery_optimized_on">Optimisation batterie : Active</string>
@@ -121,6 +134,11 @@
     <string name="nav_fail2ban">Fail2Ban</string>
     <string name="nav_ufw">Firewall UFW</string>
     <string name="section_security">Sécurité</string>
+
+    <string name="ssh_keys_empty">Aucune clé SSH enregistrée.</string>
+    <string name="ssh_keys_generate_first">Générer votre première paire de clés</string>
+    <string name="ssh_keys_add_title">Nouvelle paire de clés</string>
+    <string name="ssh_keys_name_label">Nom de la clé</string>
 
     <string name="settings_extensions_title">Extensions</string>
     <string name="settings_network_speed_label">Débit Réseau</string>
@@ -488,6 +506,7 @@
     <string name="file_manager_upload">Envoyer un fichier</string>
     <string name="file_manager_download">Télécharger</string>
     <string name="file_manager_rename">Renommer</string>
+    <string name="file_manager_permissions">Permissions (chmod)</string>
     <string name="file_manager_show_hidden">Afficher cachés</string>
     <string name="file_manager_hide_hidden">Masquer cachés</string>
     <string name="file_manager_empty">Aucun fichier dans ce dossier.</string>
@@ -506,6 +525,8 @@
     <string name="profile_delete_confirm">Supprimer ce profil ?</string>
     <string name="profile_active">Actif</string>
     <string name="profile_default_name">Raspberry Pi</string>
+    <string name="profile_auth_password">Mot de passe</string>
+    <string name="profile_auth_method">Méthode d\'authentification</string>
     <string name="nav_profiles">Profils</string>
 
     <!-- Scanner Réseau -->
@@ -527,6 +548,22 @@
     <string name="net_scan_last_scan">Dernier scan : %1$s</string>
     <string name="net_scan_retry">Réessayer</string>
     <string name="nav_net_scan">Scanner Réseau</string>
+    <string name="nav_wifi">Gestion Wi-Fi</string>
+
+    <!-- Wi-Fi Management -->
+    <string name="wifi_title">Gestion Wi-Fi</string>
+    <string name="wifi_scan_error">Erreur lors du scan des réseaux</string>
+    <string name="wifi_scan_empty">Aucun réseau Wi-Fi trouvé</string>
+    <string name="wifi_connecting">Connexion à %1$s&#8230;</string>
+    <string name="wifi_connect_success">Connecté à %1$s</string>
+    <string name="wifi_connect_error">Échec de connexion à %1$s</string>
+    <string name="wifi_connect">Se connecter</string>
+    <string name="wifi_password_label">Mot de passe pour %1$s</string>
+    <string name="wifi_connected_to">Connecté à %1$s</string>
+    <string name="wifi_signal_bars">Signal : %1$s (%2$d%%)</string>
+    <string name="wifi_security">Sécurité : %1$s</string>
+    <string name="wifi_forget">Oublier le réseau</string>
+
 
     <!-- Planificateur Cron -->
     <string name="cron_title">Planificateur Cron</string>

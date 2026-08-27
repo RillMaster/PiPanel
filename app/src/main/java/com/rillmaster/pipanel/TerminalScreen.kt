@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,6 +45,26 @@ import kotlinx.coroutines.launch
 import com.rillmaster.pipanel.ui.terminal.*
 import com.rillmaster.pipanel.ui.viewmodels.TerminalViewModel
 import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * Convertit un caractère tapé au clavier en code de contrôle terminal
+ * (équivalent d'un Ctrl+lettre physique).
+ * Renvoie null si le caractère n'a pas d'équivalent Ctrl connu.
+ */
+private fun ctrlCode(c: Char): String? {
+    val upper = c.uppercaseChar()
+    return when {
+        upper in 'A'..'Z' -> (upper - 'A' + 1).toChar().toString() // Ctrl+A..Z -> 0x01..0x1A
+        c == ' ' || c == '@' -> "\u0000"   // Ctrl+Space / Ctrl+@
+        c == '[' -> "\u001B"               // Ctrl+[ = Esc
+        c == '\\' -> "\u001C"
+        c == ']' -> "\u001D"
+        c == '^' -> "\u001E"
+        c == '_' -> "\u001F"
+        c == '?' -> "\u007F"               // Ctrl+? = Del
+        else -> null
+    }
+}
 
 @Composable
 fun SnippetDialog(
@@ -112,14 +134,12 @@ fun TerminalScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
 
-    val ghost = "\u200B"
 
     fun forceShowKeyboard() {
         focusRequester.requestFocus()
         keyboardController?.show()
     }
 
-    var rawInput    by remember { mutableStateOf(TextFieldValue(ghost)) }
 
     var ctrlActive  by remember { mutableStateOf(false) }
     var altActive   by remember { mutableStateOf(false) }
@@ -132,14 +152,24 @@ fun TerminalScreen(
 
     val commandHistory   = viewModel.commandHistory
     val localShortcuts   = remember { settings.sshShortcuts.toMutableStateList() }
+    var typedLine        by remember { mutableStateOf("") }
 
     val showAddSnippet       = remember { mutableStateOf(false) }
     val editSnippetIndex     = remember { mutableStateOf<Int?>(null) }
-    var suggestions          by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // Recherche d'historique (Ctrl+R)
+    var isHistorySearchActive by remember { mutableStateOf(false) }
+    var historySearchQuery    by remember { mutableStateOf("") }
+    val filteredHistory = remember(historySearchQuery, commandHistory.entries) {
+        if (historySearchQuery.isEmpty()) emptyList()
+        else commandHistory.entries.asReversed().filter { it.contains(historySearchQuery, ignoreCase = true) }.take(10)
+    }
 
     var cursorVisible by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
         viewModel.connect(context)
+        delay(500.milliseconds)
+        forceShowKeyboard()
         while (true) { delay(530.milliseconds); cursorVisible = !cursorVisible }
     }
 
@@ -156,11 +186,6 @@ fun TerminalScreen(
 
     LaunchedEffect(termCols, termRows) {
         viewModel.resize(termCols, termRows)
-    }
-
-    var typedLine   by remember { mutableStateOf("") }
-    LaunchedEffect(typedLine) {
-        suggestions = computeSuggestions(typedLine, commandHistory.entries)
     }
 
     fun toggleRotation() {
@@ -183,26 +208,42 @@ fun TerminalScreen(
     fun sendCommand(cmd: String) {
         if (cmd.isNotBlank()) {
             viewModel.sendCommand(cmd)
-            typedLine = ""
         }
     }
 
     fun runShortcut(shortcut: SshShortcut) {
         if (!uiState.isConnected) return
         shortcut.commands.forEach { cmd ->
-            if (cmd.contains("{{input}}")) {
-                typedLine = cmd.replace("{{input}}", "")
-                forceShowKeyboard()
-            } else {
-                viewModel.sendCommand(cmd)
-            }
+            viewModel.sendCommand(cmd)
         }
     }
 
-    fun applySuggestion(s: String) {
-        typedLine = s
-        suggestions = emptyList()
-        forceShowKeyboard()
+    // Gère la saisie clavier en tenant compte des modificateurs Ctrl/Alt.
+    // Quand Ctrl ou Alt est actif, le PROCHAIN caractère tapé n'est plus ajouté
+    // au champ de commande : il est converti en séquence de contrôle et envoyé
+    // directement au terminal (comportement attendu, cf. le bandeau
+    // "Ctrl actif — tapez une lettre").
+    fun handleTypedLineChange(newValue: String) {
+        val isSingleInsertion = newValue.length == typedLine.length + 1 && newValue.startsWith(typedLine)
+
+        if ((ctrlActive || altActive) && isSingleInsertion) {
+            val typedChar = newValue.last()
+
+            if (uiState.isConnected) {
+                when {
+                    ctrlActive -> ctrlCode(typedChar)?.let { viewModel.sendRaw(it) }
+                    altActive  -> viewModel.sendRaw("\u001B$typedChar")
+                }
+            }
+
+            // Le modificateur ne s'applique qu'à une seule frappe.
+            ctrlActive = false
+            altActive = false
+            typedLine = ""
+            forceShowKeyboard()
+        } else {
+            typedLine = newValue
+        }
     }
 
     BackHandler {
@@ -297,129 +338,140 @@ fun TerminalScreen(
         },
         bottomBar = {
             if (showBars) {
-                Column(modifier = Modifier.background(TerminalBg).imePadding()) {
-                    // Suggestions
-                    if (suggestions.isNotEmpty()) {
-                        ScrollableRow(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+                Surface(
+                    color = TerminalBg,
+                    tonalElevation = 4.dp,
+                    modifier = Modifier.imePadding()
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        // 1. Barre Ctrl/Alt/Esc/Tab
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            suggestions.forEach { s ->
-                                SuggestionChip(
-                                    onClick = { applySuggestion(s) },
-                                    label = { Text(s, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
-                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                        containerColor = TerminalGreen.copy(0.1f),
-                                        labelColor = TerminalGreen
-                                    ),
-                                    border = BorderStroke(1.dp, TerminalGreen.copy(0.2f))
-                                )
+                            TerminalKeyButton("Ctrl", active = ctrlActive) {
+                                ctrlActive = !ctrlActive
+                                if (ctrlActive) altActive = false
+                                forceShowKeyboard()
+                            }
+                            TerminalKeyButton("Alt", active = altActive) {
+                                altActive = !altActive
+                                if (altActive) ctrlActive = false
+                                forceShowKeyboard()
+                            }
+                            SPECIAL_KEYS.forEach { (label, code) ->
+                                TerminalKeyButton(label) {
+                                    viewModel.sendRaw(code)
+                                    forceShowKeyboard()
+                                }
                             }
                         }
-                    }
 
-                    // Toolbar Ctrl/Alt/Esc...
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        TerminalKeyButton("Ctrl", active = ctrlActive) { ctrlActive = !ctrlActive; if (ctrlActive) altActive = false; forceShowKeyboard() }
-                        TerminalKeyButton("Alt",  active = altActive)  { altActive  = !altActive;  if (altActive) ctrlActive = false; forceShowKeyboard() }
-                        SPECIAL_KEYS.forEach { (label, code) ->
-                            TerminalKeyButton(label) { viewModel.sendRaw(code); forceShowKeyboard() }
+                        // 2. Barre des raccourcis (ls, top...)
+                        ScrollableRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            localShortcuts.forEachIndexed { idx, snip ->
+                                val color = shortcutColor(idx)
+                                Button(
+                                    onClick = { runShortcut(snip) },
+                                    modifier = Modifier.height(32.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = color.copy(alpha = 0.15f),
+                                        contentColor = color
+                                    ),
+                                    border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+                                ) {
+                                    Text(snip.label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            IconButton(
+                                onClick = { showAddSnippet.value = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Add, null, tint = TerminalGreen, modifier = Modifier.size(18.dp))
+                            }
                         }
-                        IconButton(onClick = { showAddSnippet.value = true }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Add, null, tint = TerminalGreen, modifier = Modifier.size(18.dp))
-                        }
-                    }
 
-                    // Input
-                    Row(
-                        modifier = Modifier.fillMaxWidth().background(Color.Black.copy(0.3f)).padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.ChevronRight, null, tint = TerminalGreen, modifier = Modifier.size(20.dp))
-                        
-                        Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                            BasicTextField(
-                                value = rawInput,
-                                onValueChange = { newVal ->
-                                    val old = rawInput.text
-                                    val curr = newVal.text
-                                    
-                                    when {
-                                        curr.length > old.length -> {
-                                            val added = curr.drop(old.length)
-                                            if (ctrlActive) {
-                                                val c = added.first().uppercaseChar()
-                                                val code = (c.code - 64).toChar().toString()
-                                                viewModel.sendRaw(code)
-                                                ctrlActive = false
-                                            } else if (altActive) {
-                                                viewModel.sendRaw("\u001B" + added)
-                                                altActive = false
-                                            } else {
-                                                viewModel.sendRaw(added)
-                                            }
-                                        }
-                                        curr.length < old.length -> {
-                                            viewModel.sendRaw("\u007F")
+                        // 3. Zone de saisie principale (en bas, proche du clavier)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(0.3f))
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = typedLine,
+                                onValueChange = ::handleTypedLineChange,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(focusRequester),
+                                textStyle = TextStyle(
+                                    color = TerminalGreen,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 15.sp
+                                ),
+                                placeholder = { Text("Command...", color = Color.Gray, fontSize = 14.sp) },
+                                leadingIcon = { Text("> ", color = TerminalGreen, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp)) },
+                                trailingIcon = {
+                                    if (typedLine.isNotEmpty()) {
+                                        IconButton(onClick = { typedLine = "" }) {
+                                            Icon(Icons.Default.Clear, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
                                         }
                                     }
-                                    rawInput = TextFieldValue(ghost, TextRange(ghost.length))
                                 },
-                                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                                textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
-                                cursorBrush = SolidColor(Color.Transparent),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                                keyboardActions = KeyboardActions(onGo = { /* Enter déjà géré par key events ou onValueChange? Non, faut envoyer \r */
-                                    viewModel.sendRaw("\r")
-                                })
-                            )
-                            
-                            BasicTextField(
-                                value = typedLine,
-                                onValueChange = { typedLine = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                textStyle = TextStyle(color = TerminalGreen, fontFamily = FontFamily.Monospace, fontSize = 14.sp),
-                                cursorBrush = SolidColor(TerminalGreen),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                                keyboardActions = KeyboardActions(onGo = {
-                                    sendCommand(typedLine)
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = TerminalGreen,
+                                    unfocusedBorderColor = Color.DarkGray,
+                                    cursorColor = TerminalGreen
+                                ),
+                                keyboardOptions = KeyboardOptions(
+                                    autoCorrect = false,
+                                    keyboardType = KeyboardType.Ascii,
+                                    imeAction = ImeAction.Send
+                                ),
+                                keyboardActions = KeyboardActions(onSend = {
+                                    if (typedLine.isNotEmpty()) {
+                                        viewModel.sendCommand(typedLine)
+                                        typedLine = ""
+                                    }
                                 }),
                                 singleLine = true,
-                                decorationBox = { innerTextField ->
-                                    if (typedLine.isEmpty()) Text("Type a command...", color = Color.Gray.copy(0.5f), fontSize = 14.sp, fontFamily = FontFamily.Monospace)
-                                    innerTextField()
-                                }
+                                shape = RoundedCornerShape(12.dp)
                             )
-                        }
 
-                        IconButton(onClick = { sendCommand(typedLine) }, enabled = typedLine.isNotBlank(), modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Send, null, tint = if (typedLine.isNotBlank()) TerminalGreen else Color.Gray)
-                        }
-                    }
+                            Spacer(Modifier.width(8.dp))
 
-                    // Snippets
-                    ScrollableRow(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        localShortcuts.forEachIndexed { idx, snip ->
-                            val color = shortcutColor(idx)
-                            Button(
-                                onClick = { runShortcut(snip) },
-                                modifier = Modifier.height(30.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = color.copy(alpha = 0.15f),
-                                    contentColor = color
-                                ),
-                                border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+                            IconButton(
+                                onClick = {
+                                    if (typedLine.isNotEmpty()) {
+                                        viewModel.sendCommand(typedLine)
+                                        typedLine = ""
+                                    }
+                                },
+                                enabled = uiState.isConnected && typedLine.isNotEmpty(),
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(
+                                        if (typedLine.isNotEmpty()) TerminalGreen.copy(0.2f) else Color.Transparent,
+                                        RoundedCornerShape(12.dp)
+                                    )
                             ) {
-                                Text(snip.label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = if (uiState.isConnected && typedLine.isNotEmpty()) TerminalGreen else Color.Gray
+                                )
                             }
                         }
                     }
@@ -461,14 +513,7 @@ fun TerminalScreen(
                     }
                     items(screenLines.size, key = { "sr_$it" }) { idx ->
                         val line = screenLines[idx]
-                        val displayLine = if (uiState.isConnected && idx == cursorRow && cursorVisible && emulator.getCursorVisible()) {
-                            buildAnnotatedString {
-                                append(line)
-                                if (cursorCol < line.length) {
-                                    // Custom cursor rendering logic here if needed
-                                }
-                            }
-                        } else line
+                        val showCursorHere = uiState.isConnected && idx == cursorRow && cursorVisible && emulator.getCursorVisible()
 
                         Box {
                             Text(
@@ -480,7 +525,7 @@ fun TerminalScreen(
                                     lineHeight = (fontSize * 1.2f).sp
                                 )
                             )
-                            if (uiState.isConnected && idx == cursorRow && cursorVisible && emulator.getCursorVisible()) {
+                            if (showCursorHere) {
                                 val cw = with(density) { fontSize.sp.toPx() * 0.6f }
                                 Box(
                                     modifier = Modifier

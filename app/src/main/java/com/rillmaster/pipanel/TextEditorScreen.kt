@@ -1,6 +1,5 @@
 package com.rillmaster.pipanel
 
-import android.util.Base64
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -252,32 +251,3 @@ private fun highlightSyntax(code: String, ext: String): AnnotatedString {
     }
 }
 
-object RemoteFileHelper {
-    suspend fun readFile(settings: SettingsManager, filePath: String): String =
-        SshClient.execute(host = settings.host, port = settings.port, user = settings.username, password = settings.password, command = "cat \"$filePath\" 2>/dev/null || true")
-
-    suspend fun writeFile(settings: SettingsManager, filePath: String, content: String): Boolean {
-        val encoded = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        val tmpPath = "/tmp/.editor_${System.currentTimeMillis()}"
-        val cmd = "printf '%s' '$encoded' | base64 -d > \"$tmpPath\" && mv \"$tmpPath\" \"$filePath\""
-        val result = SshClient.execute(host = settings.host, port = settings.port, user = settings.username, password = settings.password, command = cmd)
-        return !result.startsWith("[err]")
-    }
-
-    suspend fun getThumbnail(settings: SettingsManager, filePath: String, type: String): android.graphics.Bitmap? {
-        val cmd = when (type) {
-            "video" -> "ffmpeg -i \"$filePath\" -ss 00:00:01 -vframes 1 -s 128:128 -f mjpeg - 2>/dev/null | base64"
-            "audio" -> "ffmpeg -i \"$filePath\" -an -vcodec copy -f mjpeg - 2>/dev/null | base64"
-            "image" -> "ffmpeg -i \"$filePath\" -vf \"scale=128:128:force_original_aspect_ratio=decrease\" -f mjpeg - 2>/dev/null | base64"
-            else -> return null
-        }
-        val b64 = SshClient.execute(settings.host, settings.port, settings.username, settings.password, cmd).trim()
-        if (b64.isEmpty() || b64.startsWith("[err]")) return null
-        return try {
-            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        } catch (_: Exception) {
-            null
-        }
-    }
-}

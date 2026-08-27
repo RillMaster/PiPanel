@@ -16,8 +16,8 @@ android {
         applicationId = "com.rillmaster.pipanel"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.5.2"
+        versionCode = 15
+        versionName = "1.5.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -52,6 +52,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlin.reflect)
     implementation(libs.androidx.activity.compose)
@@ -62,15 +63,19 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material3.windowSizeClass)
     implementation(libs.androidx.material.icons.extended)
+
     testImplementation(libs.junit)
-    testImplementation("io.mockk:mockk:1.13.13")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
+
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
+
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
     implementation(libs.calvin.reorderable)
     implementation(libs.vico.compose)
     implementation(libs.vico.compose.m3)
@@ -81,16 +86,24 @@ dependencies {
     implementation(libs.play.services.code.scanner)
     implementation(libs.zxing.core)
     implementation(libs.androidx.biometric)
-    implementation("androidx.fragment:fragment-ktx:1.8.9")
+    implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.glance.material3)
-    implementation("androidx.documentfile:documentfile:1.1.0")
+    implementation(libs.androidx.documentfile)
     implementation(libs.guava)
-    
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
+
     implementation(libs.androidx.datastore.preferences)
 
     // Room (métriques locales)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    implementation(libs.bouncycastle.bcprov)
+    // bcprov-jdk15to18 embarque déjà les classes ASN.1 : exclure bcutil pour éviter les doublons
+    implementation(libs.bouncycastle.bcpkix) {
+        exclude(group = "org.bouncycastle", module = "bcutil-jdk15to18")
+    }
 }

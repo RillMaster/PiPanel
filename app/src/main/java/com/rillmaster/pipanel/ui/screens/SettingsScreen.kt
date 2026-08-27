@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -20,7 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -39,6 +42,9 @@ import com.rillmaster.pipanel.SettingsManager
 import com.rillmaster.pipanel.SshShortcut
 import com.rillmaster.pipanel.UpdateStatsWorker
 import com.rillmaster.pipanel.WidgetUpdateService
+import com.rillmaster.pipanel.BackupManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.rillmaster.pipanel.ui.components.SectionTitle
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
@@ -94,9 +100,40 @@ fun SettingsScreen(
     var selectedRefresh by remember { mutableIntStateOf(settings.tempRefreshMs) }
     val timeoutOptions  = listOf(5000 to "5 s", 8000 to "8 s", 15000 to "15 s", 30000 to "30 s")
     var selectedTimeout by remember { mutableIntStateOf(settings.sshTimeoutMs) }
+    
+    var selectedTermTheme by remember { mutableStateOf(settings.terminalThemeName) }
+
     var shortcuts       by remember { mutableStateOf(settings.sshShortcuts) }
     val showAddDialog   = remember { mutableStateOf(false) }
     val editShortcutIdx = remember { mutableStateOf<Int?>(null) }
+    
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        uri?.let {
+            scope.launch {
+                val success = BackupManager.exportConfig(context, it, settings)
+                snackbarHostState.showSnackbar(if (success) "Configuration exported!" else "Export failed")
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            scope.launch {
+                val success = BackupManager.importConfig(context, it, settings)
+                if (success) {
+                    snackbarHostState.showSnackbar("Configuration imported!")
+                    // Reload UI state
+                    shortcuts = settings.sshShortcuts
+                } else {
+                    snackbarHostState.showSnackbar("Import failed")
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -115,7 +152,8 @@ fun SettingsScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier            = Modifier
@@ -267,6 +305,53 @@ fun SettingsScreen(
                 }
             }
 
+            SectionTitle(stringResource(R.string.settings_monitoring_service_title))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.settings_monitoring_service_label), modifier = Modifier.weight(1f))
+                var monitoringEnabled by remember { mutableStateOf(settings.monitoringServiceEnabled) }
+                Switch(
+                    checked = monitoringEnabled,
+                    onCheckedChange = {
+                        monitoringEnabled = it
+                        settings.monitoringServiceEnabled = it
+                        if (it) {
+                            com.rillmaster.pipanel.MonitoringForegroundService.start(activity)
+                        } else {
+                            com.rillmaster.pipanel.MonitoringForegroundService.stop(activity)
+                        }
+                    }
+                )
+            }
+
+            // ── Thème Terminal ───────────────────────────────────────────
+            var termThemeExpanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = termThemeExpanded,
+                onExpandedChange = { termThemeExpanded = it },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                OutlinedTextField(
+                    value = selectedTermTheme,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Terminal Theme") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(termThemeExpanded) },
+                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                )
+                ExposedDropdownMenu(expanded = termThemeExpanded, onDismissRequest = { termThemeExpanded = false }) {
+                    com.rillmaster.pipanel.ui.terminal.TerminalThemes.forEach { theme ->
+                        DropdownMenuItem(
+                            text = { Text(theme.name) },
+                            onClick = {
+                                selectedTermTheme = theme.name
+                                settings.terminalThemeName = theme.name
+                                termThemeExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
             SectionTitle(stringResource(R.string.settings_shortcuts_title))
             ReorderableColumn(
                 list                = shortcuts,
@@ -344,6 +429,51 @@ fun SettingsScreen(
                 }
             }
 
+            // ── Tuiles Quick Settings ─────────────────────────────────────
+            SectionTitle(stringResource(R.string.settings_tiles_title))
+            Text(
+                stringResource(R.string.settings_tiles_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            repeat(3) { slot ->
+                var expanded by remember { mutableStateOf(false) }
+                val currentId = remember(shortcuts) { mutableStateOf(settings.getTileShortcutId(slot)) }
+                val currentShortcut = shortcuts.find { it.id == currentId.value }
+                    ?: if (currentId.value == null) shortcuts.getOrNull(slot) else null
+
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = it },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    OutlinedTextField(
+                        value = currentShortcut?.label ?: "—",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(R.string.settings_tiles_slot, slot + 1)) },
+                        supportingText = currentShortcut?.let {
+                            { Text(it.commands.joinToString(" && "), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        shortcuts.forEach { shortcut ->
+                            DropdownMenuItem(
+                                text = { Text(shortcut.label) },
+                                onClick = {
+                                    settings.setTileShortcutId(slot, shortcut.id)
+                                    currentId.value = shortcut.id
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
             Button(
                 onClick  = {
                     settings.host     = host
@@ -354,6 +484,34 @@ fun SettingsScreen(
                 },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
             ) { Text(stringResource(R.string.action_save)) }
+
+            // ── Backup / Restore ──────────────────────────────────────────
+            SectionTitle("Backup & Restore")
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { exportLauncher.launch("pipanel_config.json") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Upload, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Export")
+                }
+                OutlinedButton(
+                    onClick = { importLauncher.launch("application/json") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Download, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Import")
+                }
+            }
+
+            Spacer(Modifier.height(32.dp))
         }
     }
 

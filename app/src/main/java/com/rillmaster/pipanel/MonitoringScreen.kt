@@ -2,7 +2,6 @@ package com.rillmaster.pipanel
 
 import androidx.compose.animation.*
 import com.rillmaster.pipanel.model.SystemStats
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,14 +29,26 @@ import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
+import com.patrykandpatrick.vico.compose.cartesian.data.CartesianChartModelProducer
+import com.patrykandpatrick.vico.compose.cartesian.data.lineModel
+import com.patrykandpatrick.vico.compose.cartesian.layer.LineCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLine
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
+import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
+import com.patrykandpatrick.vico.compose.cartesian.rememberVicoZoomState
+import com.patrykandpatrick.vico.compose.cartesian.data.CartesianLayerRangeProvider
+import com.patrykandpatrick.vico.compose.common.Fill
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -204,47 +215,40 @@ fun SparklineChart(
     color   : Color,
     maxValue: Float = 100f,
 ) {
-    Canvas(modifier = modifier) {
-        if (values.size < 2) return@Canvas
-        val w    = size.width
-        val h    = size.height
-        val step = w / (MAX_HISTORY - 1).toFloat()
+    val modelProducer = remember { CartesianChartModelProducer() }
 
-        fun xAt(i: Int) = ((MAX_HISTORY - values.size) + i) * step
-        fun yAt(v: Float) = h - ((v / maxValue).coerceIn(0f, 1f) * h)
-
-        val fillPath = Path().apply {
-            moveTo(xAt(0), h)
-            lineTo(xAt(0), yAt(values[0]))
-            for (i in 1 until values.size) lineTo(xAt(i), yAt(values[i]))
-            lineTo(xAt(values.size - 1), h)
-            close()
+    // Alimente le modèle Vico à chaque nouveau relevé (défilement animé par Vico)
+    LaunchedEffect(values) {
+        if (values.size >= 2) {
+            modelProducer.runTransaction {
+                lineModel { series(List(values.size) { it }, values) }
+            }
         }
-        drawPath(
-            path  = fillPath,
-            brush = Brush.verticalGradient(
-                colors = listOf(color.copy(alpha = 0.35f), Color.Transparent),
-                startY = 0f,
-                endY   = h
-            )
-        )
-
-        val linePath = Path().apply {
-            moveTo(xAt(0), yAt(values[0]))
-            for (i in 1 until values.size) lineTo(xAt(i), yAt(values[i]))
-        }
-        drawPath(
-            path  = linePath,
-            color = color,
-            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
-
-        drawCircle(
-            color  = color,
-            radius = 3.dp.toPx(),
-            center = Offset(xAt(values.size - 1), yAt(values.last()))
-        )
     }
+
+    CartesianChartHost(
+        chart = rememberCartesianChart(
+            rememberLineCartesianLayer(
+                lineProvider = LineCartesianLayer.LineProvider.series(
+                    LineCartesianLayer.rememberLine(
+                        fill = LineCartesianLayer.LineFill.single(Fill(color)),
+                        areaFill = LineCartesianLayer.AreaFill.single(
+                            Fill(color.copy(alpha = 0.30f))
+                        )
+                    )
+                ),
+                rangeProvider = CartesianLayerRangeProvider.fixed(
+                    minY = 0.0,
+                    maxY = maxValue.toDouble()
+                )
+            )
+        ),
+        modelProducer = modelProducer,
+        modifier = modifier,
+        scrollState = rememberVicoScrollState(scrollEnabled = false),
+        zoomState = rememberVicoZoomState(zoomEnabled = false),
+        initialAnimationSpec = null
+    )
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -455,9 +459,13 @@ fun MonitoringScreen(
     var txSpeed by remember { mutableLongStateOf(0L) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(Unit) {
-        while (true) {
-            val stats = fetchExtendedStats(settings, context)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // Le polling SSH est suspendu quand l'écran passe en arrière-plan (STOPPED)
+    // et reprend automatiquement au retour (STARTED), sans perdre l'historique.
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val stats = fetchExtendedStats(settings, context)
 
             if (stats != null) {
                 if (lastNetRx > 0) {
@@ -487,7 +495,8 @@ fun MonitoringScreen(
                 loading = false
                 error   = (current == null)
             }
-            delay(settings.tempRefreshMs.toLong())
+                delay(settings.tempRefreshMs.toLong())
+            }
         }
     }
 

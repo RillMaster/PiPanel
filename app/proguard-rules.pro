@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Bouncy Castle
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+
+# JSch
+-keep class com.jcraft.jsch.** { *; }
+-dontwarn com.jcraft.jsch.**

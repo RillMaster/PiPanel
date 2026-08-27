@@ -53,6 +53,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".MonitoringForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <receiver
             android:name=".StatsWidgetReceiver"
             android:exported="true"
@@ -130,6 +136,38 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/docker_widget_info" />
         </receiver>
+
+        <!-- Tuiles Quick Settings : exécution de raccourcis SSH sans ouvrir l'app -->
+        <service
+            android:name=".QuickActionTile1Service"
+            android:exported="true"
+            android:label="@string/tile_label_1"
+            android:icon="@drawable/ic_widget_stats"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".QuickActionTile2Service"
+            android:exported="true"
+            android:label="@string/tile_label_2"
+            android:icon="@drawable/ic_widget_stats"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".QuickActionTile3Service"
+            android:exported="true"
+            android:label="@string/tile_label_3"
+            android:icon="@drawable/ic_widget_stats"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
     </application>
 

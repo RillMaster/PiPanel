@@ -100,6 +100,35 @@ All notable changes to PiPanel are documented here.
 
 ---
 
+## [1.5.4]
+
+### ✨ Added
+
+#### 📈 Real-Time Charts (Live Dashboard)
+- Stat cards (CPU, Temperature) now feature live-scrolling mini-charts powered by Vico
+- Much easier to spot a load spike or overheating at a glance than a static number
+
+#### ⚡ Quick Action Tiles (Android Quick Settings)
+- Add custom Quick Settings tiles to trigger SSH commands without opening the app
+- Example: a "Restart Web Server" or "Shutdown Pi" tile accessible from anywhere
+
+#### 📶 Raspberry Pi Wi-Fi Management
+- New tool to scan nearby Wi-Fi networks from the Pi and connect to a new one
+- Handy when relocating the Pi without needing a monitor to configure Wi-Fi manually
+
+#### 🖼️ Media Gallery & Video Player (SFTP)
+- Built-in lightweight image viewer and video player in the File Manager
+- Thumbnail previews for image folders for easier navigation
+
+#### 🖥️ Terminal Themes & Customization
+- New color themes: Dracula, Solarized, Monokai
+- Advanced auto-completion (bash-completion style)
+- Reverse search history (mobile Ctrl+R)
+
+#### 📦 Configuration Export/Import
+- Export all profiles, shortcuts and SSH keys to an encrypted JSON file
+- Import configuration on a new device, or share your setup across devices
+
 ## [Previous versions]
 
 > See Git history for earlier changes.

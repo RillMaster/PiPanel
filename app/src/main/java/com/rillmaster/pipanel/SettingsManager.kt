@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import com.google.gson.Gson
 import com.rillmaster.pipanel.model.Screen
+import com.rillmaster.pipanel.ssh.SshKey
 import com.google.gson.reflect.TypeToken
 import org.json.JSONArray
 
@@ -92,10 +93,16 @@ class SettingsManager(context: Context) {
         get()      = getCurrentProfile()?.piHolePassword ?: prefs.getString("pihole_password", "") ?: ""
         set(value) = updateCurrentProfile { it.copy(piHolePassword = value) }
 
-    /** Clé privée SSH du profil courant (vide = auth par mot de passe). */
+    /** Clé privée SSH du profil courant (résolue via sshKeyId ou legacy). */
     var privateKey: String
-        get()      = getCurrentProfile()?.privateKey ?: ""
-        set(value) = updateCurrentProfile { it.copy(privateKey = value) }
+        get() {
+            val profile = getCurrentProfile() ?: return ""
+            profile.sshKeyId?.let { id ->
+                sshKeys.find { it.id == id }?.let { return it.privateKey }
+            }
+            return profile.privateKey
+        }
+        set(value) = updateCurrentProfile { it.copy(privateKey = value, sshKeyId = null) }
 
     /** Passphrase de la clé privée du profil courant. */
     var keyPassphrase: String
@@ -104,7 +111,7 @@ class SettingsManager(context: Context) {
 
     /** True si le profil courant s'authentifie par clé SSH. */
     val useSshKey: Boolean
-        get() = privateKey.isNotBlank()
+        get() = privateKey.isNotBlank() || getCurrentProfile()?.sshKeyId != null
 
     private fun updateCurrentProfile(block: (PiProfile) -> PiProfile) {
         val current = getCurrentProfile()
@@ -172,6 +179,10 @@ class SettingsManager(context: Context) {
         get()      = prefs.getBoolean("background_activity_enabled", true)
         set(value) = prefs.edit { putBoolean("background_activity_enabled", value) }
 
+    var monitoringServiceEnabled: Boolean
+        get()      = prefs.getBoolean("monitoring_service_enabled", false)
+        set(value) = prefs.edit { putBoolean("monitoring_service_enabled", value) }
+
     // ── Raccourcis terminal ───────────────────────────────────────────────────
     var sshShortcuts: List<SshShortcut>
         get() {
@@ -219,6 +230,36 @@ class SettingsManager(context: Context) {
         SshShortcut(label = "uptime", commands = listOf("uptime")),
         SshShortcut(label = "reboot", commands = listOf("sudo reboot")),
     )
+
+    // ── Tuiles Quick Settings (3 slots) ────────────────────────────────────
+    /** ID du raccourci assigné au slot de tuile [slot] (0..2), null = position. */
+    fun getTileShortcutId(slot: Int): String? = prefs.getString("tile_slot_$slot", null)
+    fun setTileShortcutId(slot: Int, id: String?) {
+        prefs.edit { if (id == null) remove("tile_slot_$slot") else putString("tile_slot_$slot", id) }
+    }
+    /** Raccourci résolu pour un slot : ID explicitement assigné, sinon le Nième raccourci. */
+    fun getTileShortcut(slot: Int): SshShortcut? {
+        val all = sshShortcuts
+        getTileShortcutId(slot)?.let { id -> all.find { it.id == id }?.let { return it } }
+        return all.getOrNull(slot)
+    }
+
+    // ── Thème Terminal ────────────────────────────────────────────────────────
+    var terminalThemeName: String
+        get() = prefs.getString("terminal_theme_v2", "Dracula") ?: "Dracula"
+        set(value) {
+            prefs.edit { putString("terminal_theme_v2", value) }
+            com.rillmaster.pipanel.ui.terminal.TerminalThemes.find { it.name == value }?.let {
+                com.rillmaster.pipanel.ui.terminal.CurrentTerminalTheme = it
+            }
+        }
+
+    fun loadTerminalTheme() {
+        val name = terminalThemeName
+        com.rillmaster.pipanel.ui.terminal.TerminalThemes.find { it.name == name }?.let {
+            com.rillmaster.pipanel.ui.terminal.CurrentTerminalTheme = it
+        }
+    }
 
     // Keep legacy property for compatibility if needed, but it will now use sshShortcuts
     var shortcuts: List<Pair<String, String>>
@@ -337,6 +378,22 @@ class SettingsManager(context: Context) {
             } catch (_: Exception) { emptyList() }
         }
         set(value) = prefs.edit { putString("file_manager_bookmarks", gson.toJson(value)) }
+
+    // ── Gestion des clés SSH ─────────────────────────────────────────────────
+    var sshKeys: List<SshKey>
+        get() {
+            val json = prefs.getString("ssh_keys_list", null)
+            return if (json == null) emptyList()
+            else try {
+                val type = object : TypeToken<List<SshKey>>() {}.type
+                // On déchiffre le JSON globalement (ou par clé, ici globalement pour simplifier car CryptoManager gère bien)
+                gson.fromJson(CryptoManager.decrypt(json), type)
+            } catch (_: Exception) { emptyList() }
+        }
+        set(value) {
+            val json = CryptoManager.encrypt(gson.toJson(value))
+            prefs.edit { putString("ssh_keys_list", json) }
+        }
 
     // ── Historique des commandes ──────────────────────────────────────────────
     fun getCommandHistory(profileId: String): List<String> {

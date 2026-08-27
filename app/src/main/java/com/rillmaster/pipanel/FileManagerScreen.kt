@@ -16,8 +16,10 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
@@ -37,11 +39,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.rillmaster.pipanel.ui.components.MediaViewer
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
-import com.rillmaster.pipanel.R.string.error_binary_file
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -109,11 +112,13 @@ fun FileManagerScreen(
     var fileContent by remember { mutableStateOf("") }
     var mediaFile by remember { mutableStateOf<RemoteFile?>(null) }
     var mediaBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var localMediaFile by remember { mutableStateOf<File?>(null) }
     var isMediaLoading by remember { mutableStateOf(false) }
     var isMediaPreview by remember { mutableStateOf(false) }
     var isDownloadingFull by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf<Boolean?>(null) } 
     var renamingFile by remember { mutableStateOf<RemoteFile?>(null) }
+    var chmodFile    by remember { mutableStateOf<RemoteFile?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     
     var folderSizes = remember { mutableStateMapOf<String, String>() }
@@ -312,9 +317,10 @@ fun FileManagerScreen(
                                             if (file.isDirectory) currentPath = file.path 
                                             else handleFileClick(context, file, settings, scope, snackbarHostState,
                                                 onEdit = { c -> fileContent = c; editingFile = file; isFileLoading = false },
-                                                onMedia = { b, preview -> 
+                                                onMedia = { b, preview, local -> 
                                                     mediaBitmap = b
                                                     mediaFile = file
+                                                    localMediaFile = local
                                                     isMediaPreview = preview
                                                     isFileLoading = false
                                                     isMediaLoading = false 
@@ -335,6 +341,7 @@ fun FileManagerScreen(
                                         }
                                     },
                                     onRename = { renamingFile = file },
+                                    onChmod = { chmodFile = file },
                                     onDownload = {
                                         selectedFiles = setOf(file)
                                         folderPickerLauncher.launch(null)
@@ -369,39 +376,61 @@ fun FileManagerScreen(
         val isVid = isVideoFile(file.name)
         val isAud = isAudioFile(file.name)
 
-        Dialog(onDismissRequest = { 
-            if (!isDownloadingFull) {
-                mediaFile = null; mediaBitmap = null; isMediaPreview = false 
-            }
-        }) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        if (isImg || ( (isVid || isAud) && !isMediaPreview )) {
+            // Viewer Intégré (Gallery / Player)
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { 
+                    if (!isDownloadingFull) {
+                        mediaFile = null; mediaBitmap = null; localMediaFile = null; isMediaPreview = false 
+                    }
+                },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                MediaViewer(
+                    fileName = file.name,
+                    fileSize = file.size,
+                    isImage = isImg,
+                    isVideo = isVid,
+                    initialBitmap = mediaBitmap,
+                    localFile = localMediaFile,
+                    onClose = { mediaFile = null; mediaBitmap = null; localMediaFile = null; isMediaPreview = false },
+                    onDownload = { enqueueDownload(context, file, "", settings) }
+                )
+            }
+        } else {
+            // Dialogue de Preview (pour Vidéo/Audio avant téléchargement complet)
+            Dialog(onDismissRequest = { 
+                if (!isDownloadingFull) {
+                    mediaFile = null; mediaBitmap = null; isMediaPreview = false 
+                }
+            }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(240.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        if (isMediaLoading) {
-                            CircularProgressIndicator()
-                        } else if (mediaBitmap != null) {
-                            Image(
-                                bitmap = mediaBitmap!!.asImageBitmap(),
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit
-                            )
-                            if (isMediaPreview) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(240.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isMediaLoading) {
+                                CircularProgressIndicator()
+                            } else if (mediaBitmap != null) {
+                                Image(
+                                    bitmap = mediaBitmap!!.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
                                 Icon(
                                     imageVector = if (isVid) Icons.Default.PlayCircleFilled else Icons.Default.MusicNote,
                                     contentDescription = null,
@@ -409,22 +438,13 @@ fun FileManagerScreen(
                                     modifier = Modifier.size(64.dp)
                                 )
                             }
-                        } else {
-                            Icon(
-                                imageVector = if (isVid) Icons.Default.VideoFile else if (isAud) Icons.Default.AudioFile else Icons.Default.Image,
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                            )
                         }
-                    }
 
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(file.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${file.size} • ${file.date}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(file.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${file.size} • ${file.date}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
 
-                    if (isMediaPreview) {
                         Button(
                             onClick = {
                                 isDownloadingFull = true
@@ -436,10 +456,8 @@ fun FileManagerScreen(
                                     withContext(Dispatchers.Main) {
                                         isDownloadingFull = false
                                         if (res.isSuccess) {
-                                            mediaFile = null
-                                            mediaBitmap = null
-                                            isMediaPreview = false
-                                            openMediaExternally(context, cacheFile, if (isVid) "video/*" else "audio/*", snackbarHostState)
+                                            localMediaFile = cacheFile
+                                            isMediaPreview = false // Basculer vers le MediaViewer
                                         } else {
                                             snackbarHostState.showSnackbar("Error: ${res.exceptionOrNull()?.message}")
                                         }
@@ -457,17 +475,17 @@ fun FileManagerScreen(
                             } else {
                                 Icon(Icons.Default.PlayArrow, null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Play Media")
+                                Text("Play Integrated")
                             }
                         }
-                    }
 
-                    TextButton(
-                        onClick = { mediaFile = null; mediaBitmap = null; isMediaPreview = false },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isDownloadingFull
-                    ) {
-                        Text("Close")
+                        TextButton(
+                            onClick = { mediaFile = null; mediaBitmap = null; isMediaPreview = false },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isDownloadingFull
+                        ) {
+                            Text("Close")
+                        }
                     }
                 }
             }
@@ -517,6 +535,71 @@ fun FileManagerScreen(
             dismissButton = { TextButton(onClick = { renamingFile = null }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
+
+    // Chmod Dialogue
+    chmodFile?.let { file ->
+        var perms by remember { mutableStateOf(file.permissions) } // ex: "-rw-r--r--"
+        
+        fun toggle(index: Int, char: Char) {
+            val arr = perms.toCharArray()
+            arr[index] = if (arr[index] == char) '-' else char
+            perms = String(arr)
+        }
+
+        AlertDialog(
+            onDismissRequest = { chmodFile = null },
+            title = { Text("Permissions: ${file.name}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("User", fontWeight = FontWeight.Bold)
+                    Row {
+                        FilterChip(selected = perms[1] == 'r', onClick = { toggle(1, 'r') }, label = { Text("Read") })
+                        Spacer(Modifier.width(4.dp))
+                        FilterChip(selected = perms[2] == 'w', onClick = { toggle(2, 'w') }, label = { Text("Write") })
+                        Spacer(Modifier.width(4.dp))
+                        FilterChip(selected = perms[3] == 'x', onClick = { toggle(3, 'x') }, label = { Text("Exec") })
+                    }
+                    Text("Group", fontWeight = FontWeight.Bold)
+                    Row {
+                        FilterChip(selected = perms[4] == 'r', onClick = { toggle(4, 'r') }, label = { Text("Read") })
+                        Spacer(Modifier.width(4.dp))
+                        FilterChip(selected = perms[5] == 'w', onClick = { toggle(5, 'w') }, label = { Text("Write") })
+                        Spacer(Modifier.width(4.dp))
+                        FilterChip(selected = perms[6] == 'x', onClick = { toggle(6, 'x') }, label = { Text("Exec") })
+                    }
+                    Text("Others", fontWeight = FontWeight.Bold)
+                    Row {
+                        FilterChip(selected = perms[7] == 'r', onClick = { toggle(7, 'r') }, label = { Text("Read") })
+                        Spacer(Modifier.width(4.dp))
+                        FilterChip(selected = perms[8] == 'w', onClick = { toggle(8, 'w') }, label = { Text("Write") })
+                        Spacer(Modifier.width(4.dp))
+                        FilterChip(selected = perms[9] == 'x', onClick = { toggle(9, 'x') }, label = { Text("Exec") })
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    scope.launch {
+                        // Conversion -rw-r--r-- -> 644
+                        fun toOctal(r: Char, w: Char, x: Char): Int {
+                            var n = 0
+                            if (r != '-') n += 4
+                            if (w != '-') n += 2
+                            if (x != '-') n += 1
+                            return n
+                        }
+                        val octal = "${toOctal(perms[1], perms[2], perms[3])}${toOctal(perms[4], perms[5], perms[6])}${toOctal(perms[7], perms[8], perms[9])}"
+                        SshClient.execute(settings.host, settings.port, settings.username, settings.password, "sudo chmod $octal \"${file.path}\"")
+                        chmodFile = null
+                        refreshFiles(settings, currentPath, showHidden, { files = it }, { error = it }, { isLoading = it })
+                    }
+                }) { Text(stringResource(R.string.action_apply)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { chmodFile = null }) { Text(stringResource(R.string.action_cancel)) }
+            }
+        )
+    }
 }
 
 private fun handleFileClick(
@@ -526,7 +609,7 @@ private fun handleFileClick(
     scope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState,
     onEdit: (String) -> Unit,
-    onMedia: (android.graphics.Bitmap?, Boolean) -> Unit,
+    onMedia: (android.graphics.Bitmap?, Boolean, java.io.File?) -> Unit,
     onLoading: (Boolean) -> Unit,
     binaryMsg: String
 ) {
@@ -546,7 +629,7 @@ private fun handleFileClick(
                 }
                 if (res.isSuccess) {
                     val bitmap = BitmapFactory.decodeFile(cacheFile.absolutePath)
-                    withContext(Dispatchers.Main) { onMedia(bitmap, false) }
+                    withContext(Dispatchers.Main) { onMedia(bitmap, false, cacheFile) }
                 } else {
                     withContext(Dispatchers.Main) {
                         onLoading(false)
@@ -558,7 +641,7 @@ private fun handleFileClick(
                 val type = if (isVid) "video" else if (isAud) "audio" else "image"
                 val bitmap = RemoteFileHelper.getThumbnail(settings, file.path, type)
                 withContext(Dispatchers.Main) {
-                    onMedia(bitmap, true)
+                    onMedia(bitmap, true, null)
                 }
             }
         }
@@ -573,20 +656,6 @@ private fun handleFileClick(
     }
 }
 
-private fun openMediaExternally(context: Context, file: File, mimeType: String, snackState: SnackbarHostState) {
-    try {
-        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mimeType)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
-            snackState.showSnackbar("Error opening file: ${e.message}")
-        }
-    }
-}
 
 private fun enqueueUpload(context: Context, uri: Uri, targetDir: String, settings: SettingsManager, snackState: SnackbarHostState, scope: kotlinx.coroutines.CoroutineScope, uploadMsg: String) {
     val fileName = getFileName(context, uri)
@@ -725,6 +794,7 @@ private fun FileItem(
     onDelete: () -> Unit,
     onRename: () -> Unit,
     onDownload: () -> Unit,
+    onChmod: () -> Unit,
     overrideSize: String? = null,
     onCalculateSize: () -> Unit = {}
 ) {
@@ -736,9 +806,10 @@ private fun FileItem(
     val isAud = isAudioFile(file.name)
     val isMedia = !file.isDirectory && (isImg || isVid || isAud)
 
-    if (isMedia) {
+    if (isMedia || file.isDirectory) {
         LaunchedEffect(file.path) {
-            val type = if (isVid) "video" else if (isAud) "audio" else "image"
+            delay(200.milliseconds) // Évite de spammer pendant le scroll rapide
+            val type = if (file.isDirectory) "folder" else if (isVid) "video" else if (isAud) "audio" else "image"
             thumbnail = RemoteFileHelper.getThumbnail(settings, file.path, type)
         }
     }
@@ -815,6 +886,7 @@ private fun FileItem(
                         }
                         DropdownMenuItem(text = { Text(stringResource(R.string.file_manager_download)) }, onClick = { showMenu = false; onDownload() }, leadingIcon = { Icon(Icons.Default.FileDownload, null) })
                         DropdownMenuItem(text = { Text(stringResource(R.string.file_manager_rename)) }, onClick = { showMenu = false; onRename() }, leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.file_manager_permissions)) }, onClick = { showMenu = false; onChmod() }, leadingIcon = { Icon(Icons.Default.Lock, null) })
                         DropdownMenuItem(text = { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) }, onClick = { showMenu = false; onDelete() }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) })
                     }
                 }

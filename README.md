@@ -63,11 +63,19 @@
 - PTY support with sticky modifier keys (Ctrl, Alt, etc.)
 - SSH session directly in the app
 
-### 🔔 Notifications
+### 🔔 Notifications & Monitoring
 - CPU & RAM threshold alerts via **WorkManager**
 - **Disk space alerts** with configurable threshold
-- **Critical services monitoring** (`systemd` services, customizable list)
-- Background monitoring with configurable thresholds
+- **Systemd services monitoring** (customizable list)
+- **Background metrics collection** every 15 minutes
+- **Quick Settings Tiles** to trigger SSH shortcuts instantly
+
+### 🛠️ System Tools
+- **Cron Job Manager**: Add, edit and delete scheduled tasks
+- **Wi-Fi Management**: Scan and connect your Pi to local networks
+- **UFW Firewall**: Manage rules and status
+- **Fail2Ban**: Monitor security logs and bans
+- **Remote File Transfer**: Background SFTP uploads/downloads
 
 ### 🔐 Security
 - **Biometric authentication** (fingerprint / face unlock)
@@ -126,14 +134,12 @@ On first launch, enter your Pi's:
 |---|---|
 | Language | Kotlin |
 | UI | Jetpack Compose + Material 3 |
-| SSH | JSch |
+| SSH / SFTP | JSch |
 | Background tasks | WorkManager |
-| Auth | AndroidX Biometric |
-| Terminal | Custom VT100/xterm-256color renderer |
-| Drag & drop | `sh.calvin.reorderable` |
-| Local database | Room (metrics history) |
-| Charts | Vico |
 | Widgets | Glance |
+| Charts | Vico |
+| Local database | Room |
+| Dependency Injection | Manual (Singleton providers) |
 
 ---
 
@@ -141,47 +147,47 @@ On first launch, enter your Pi's:
 
 ```
 app/src/main/java/com/rillmaster/pipanel/
-├── MainActivity.kt                  # Entry point, navigation
-├── OnboardingActivity.kt            # First-launch setup flow
-├── SshClient.kt                     # SSH connection manager
-├── SettingsManager.kt               # Credentials & config storage
-├── ApiService.kt                    # API service interface
-├── BiometricHelper.kt               # Biometric authentication
-├── UpdateManager.kt                 # Automatic update system
+├── ui/                              # UI Layer
+│   ├── screens/                     # App settings & secondary screens
+│   ├── viewmodels/                  # ViewModels for complex states
+│   ├── components/                  # Reusable UI components
+│   ├── theme/                       # Material 3 & dynamic colors
+│   └── terminal/                    # VT100 terminal engine
 │
+├── ssh/                             # SSH Key management
+├── data/db/                         # Room metrics database
+├── model/                           # Domain models
+├── update/                          # Update system (OTA)
+│
+├── MainActivity.kt                  # Root entry & Navigation
+├── OnboardingActivity.kt            # Setup flow
+│
+├── SshClient.kt                     # SSH/SFTP core implementation
+├── SettingsManager.kt               # Secure credentials storage
+│
+├── MonitoringScreen.kt              # Resource monitoring (CPU/RAM/Temp)
 ├── DockerScreen.kt                  # Docker container management
-├── FileManagerScreen.kt             # Remote file browser
-├── TextEditorScreen.kt              # In-app text/file editor
-├── TerminalScreen.kt                # VT100/xterm-256color terminal
-├── MonitoringScreen.kt              # CPU / RAM / metrics overview
-├── ChartsScreen.kt                  # 24h history charts (Vico + Room)
-├── DashboardPrefs.kt                # Dashboard layout preferences (DataStore)
-├── SensorDashboardScreen.kt         # Sensor data dashboard
-├── GpioScheduleScreen.kt            # GPIO scheduling & controls
-├── PwmSliderScreen.kt               # PWM control sliders
-├── Wireguardscreen.kt               # WireGuard VPN toggle & info
-├── Piholescreen.kt                  # Pi-hole toggle
-├── Piholeconfigscreen.kt            # Pi-hole advanced config
-├── UfwScreen.kt                     # UFW firewall management
-├── Fail2BanScreen.kt                # Fail2Ban monitoring
-├── LogsViewerScreen.kt              # System logs viewer
-├── NotificationSettingsScreen.kt    # Notification thresholds config
+├── TerminalScreen.kt                # Full SSH terminal
+├── FileManagerScreen.kt             # Remote file browser & editor
+├── NetworkScannerScreen.kt          # SSH + nmap discovery
 │
-├── MonitoringWorker.kt              # Background WorkManager worker
-├── NotificationHelper.kt           # Notification builder/helper
-├── WidgetUpdateService.kt           # Background widget refresh service
+├── ServicesScreen.kt                # systemd service manager
+├── UfwScreen.kt                     # Firewall control
+├── Piholescreen.kt                  # Pi-hole integration
+├── Wireguardscreen.kt               # VPN management
 │
-├── PiHoleWidget.kt                  # Pi-hole home screen widget
-├── StatsWidget.kt                   # Stats home screen widget
-├── SensorWidget.kt                  # Sensor home screen widget
-├── WireGuardWidget.kt               # WireGuard home screen widget
-├── CpuTempWidget.kt                 # CPU temperature widget (alert > 70°C)
-├── DockerWidget.kt                  # Docker container count widget
+├── CronSchedulerScreen.kt           # Task scheduling (Crontab)
+├── GpioScheduleScreen.kt            # GPIO & PWM control
+├── WifiManagementScreen.kt          # Wi-Fi configuration
 │
-├── data/db/                         # Room database (metrics history)
+├── MonitoringWorker.kt              # Background stats collection
+├── FileTransferWorker.kt            # Background SFTP transfers
+├── WidgetUpdateService.kt           # Home screen sync service
 │
-└── ui/theme/                        # Material You theming
+└── *Widget.kt                       # Android Home Screen Widgets (Glance)
 ```
+
+
 
 ---
 
