@@ -203,6 +203,22 @@ The APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
 
 ---
 
+## ⚠️ Known Limitations / Disclaimer
+
+PiPanel is a personal project under active development. Some features may:
+- Contain **bugs** or unexpected behavior depending on your Raspberry Pi model / configuration
+- Not be **fully tested** across every Android version or Raspbian/DietPi/Ubuntu setup
+- **Change or be modified** without guaranteed backward compatibility between versions
+
+If you run into an issue, feel free to open an [issue](../../issues) describing:
+- The Raspberry Pi model and OS you're using
+- Your Android version and phone model
+- Steps to reproduce the bug
+
+Contributions and feedback are welcome 🙏
+
+---
+
 ## 📄 License
 
 ```
