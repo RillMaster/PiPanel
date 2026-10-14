@@ -4,6 +4,64 @@ All notable changes to PiPanel are documented here.
 
 ---
 
+## [1.5.5]
+
+### ✨ Added
+
+#### 📊 New Tracked Metrics
+- **Disk I/O** chart — read/write speeds in MB/s with adaptive precision (3 decimals) so even small speeds stay visible
+- **Network speed** chart — download/upload rates in kB/s
+- Storage and network throughput (RX/TX) are now tracked over 24h
+- The Room database now also stores network and disk measurements, collected every 15 minutes by the background worker
+- The SSH Python script on the Pi now parses `/proc/net/dev` and `/proc/diskstats`
+
+#### 🎨 Chart Customization (Edit Mode)
+- New **palette icon** in the top bar to open color settings
+- Custom **HSV/RGB color picker** — circular color wheel with a brightness slider, draggable square cursor, live preview, and OK / Cancel buttons
+- **Per-curve colors** (e.g. CPU vs Temperature), persisted across restarts
+- Drag-and-drop reordering of charts
+
+#### 🔒 Built-in WireGuard VPN
+- Official **WireGuard SDK** integrated directly in PiPanel — no external app needed
+- **Auto-configuration** — one button generates the keys and adds you as a client on the Pi via SSH
+- Smart connection: connects when the app opens, disconnects when it closes to save battery
+
+#### 🌐 SSH Connection Multiplexing
+- New `SshSessionManager` — a single shared SSH session used by widgets, terminal and stats screens (instead of ~10 simultaneous connections)
+- Fixes Raspberry Pi crashes caused by too many concurrent connections
+
+#### 💻 SSH Terminal
+- Floating **D-Pad** for easy navigation in nano or htop
+- **Suggestion bar** based on history and common Linux commands
+- **Haptic feedback** on special keys
+- **Landscape mode**: compact interface that keeps the terminal visible with the keyboard open
+- Better **ANSI color** support (files, folders) for a more authentic Linux look
+
+#### ✨ Premium UI & Animations
+- Staggered slide-up entrance animations
+- Tiles bounce slightly on touch
+- Progress bars (CPU, RAM, Disk) glide instead of jumping; the "Online" dot pulses subtly
+
+### 🔄 Changed
+
+- **Charts look**: gradients under curves and interactive touch tooltips showing exact values with units (%, °C, MB/s, kB/s…), without truncation
+- **Smooth scrolling**: charts no longer "jump" on each new point — linear right-to-left windowing
+- **Smart collection**: monitoring now records data even when notifications are disabled
+- **Cleaner changelog parser**: only the latest version's notes are displayed instead of the whole file
+- Heavy terminal computations moved to the background — no more freezes with large outputs
+- Cleaned up notifications: removed spurious alerts during the setup phase
+- Removed duplicate "Last login" messages at terminal startup
+
+### 🐛 Fixed
+
+- Critical crash when opening charts with no data yet (`Series can't be empty`)
+- X-axis showing scientific notation (e.g. `1.7E12`) — now displays readable `HH:mm` times (e.g. 14:30)
+- Terminal keyboard bug preventing commands from being typed (input field fully rewritten)
+- **Room**: database bumped to **version 3** to prevent migration crashes
+- Crash when upgrading from an older version (empty fields in profiles)
+
+---
+
 ## [1.5.2]
 
 ### ✨ Added
@@ -128,64 +186,6 @@ All notable changes to PiPanel are documented here.
 #### 📦 Configuration Export/Import
 - Export all profiles, shortcuts and SSH keys to an encrypted JSON file
 - Import configuration on a new device, or share your setup across devices
-
----
-
-## [1.5.5]
-
-### ✨ Added
-
-#### 📊 New Tracked Metrics
-- **Disk I/O** chart — read/write speeds in MB/s with adaptive precision (3 decimals) so even small speeds stay visible
-- **Network speed** chart — download/upload rates in kB/s
-- Storage and network throughput (RX/TX) are now tracked over 24h
-- The Room database now also stores network and disk measurements, collected every 15 minutes by the background worker
-- The SSH Python script on the Pi now parses `/proc/net/dev` and `/proc/diskstats`
-
-#### 🎨 Chart Customization (Edit Mode)
-- New **palette icon** in the top bar to open color settings
-- Custom **HSV/RGB color picker** — circular color wheel with a brightness slider, draggable square cursor, live preview, and OK / Cancel buttons
-- **Per-curve colors** (e.g. CPU vs Temperature), persisted across restarts
-- Drag-and-drop reordering of charts
-
-#### 🔒 Built-in WireGuard VPN
-- Official **WireGuard SDK** integrated directly in PiPanel — no external app needed
-- **Auto-configuration** — one button generates the keys and adds you as a client on the Pi via SSH
-- Smart connection: connects when the app opens, disconnects when it closes to save battery
-
-#### 🌐 SSH Connection Multiplexing
-- New `SshSessionManager` — a single shared SSH session used by widgets, terminal and stats screens (instead of ~10 simultaneous connections)
-- Fixes Raspberry Pi crashes caused by too many concurrent connections
-
-#### 💻 SSH Terminal
-- Floating **D-Pad** for easy navigation in nano or htop
-- **Suggestion bar** based on history and common Linux commands
-- **Haptic feedback** on special keys
-- **Landscape mode**: compact interface that keeps the terminal visible with the keyboard open
-- Better **ANSI color** support (files, folders) for a more authentic Linux look
-
-#### ✨ Premium UI & Animations
-- Staggered slide-up entrance animations
-- Tiles bounce slightly on touch
-- Progress bars (CPU, RAM, Disk) glide instead of jumping; the "Online" dot pulses subtly
-
-### 🔄 Changed
-
-- **Charts look**: gradients under curves and interactive touch tooltips showing exact values with units (%, °C, MB/s, kB/s…), without truncation
-- **Smooth scrolling**: charts no longer "jump" on each new point — linear right-to-left windowing
-- **Smart collection**: monitoring now records data even when notifications are disabled
-- **Cleaner changelog parser**: only the latest version's notes are displayed instead of the whole file
-- Heavy terminal computations moved to the background — no more freezes with large outputs
-- Cleaned up notifications: removed spurious alerts during the setup phase
-- Removed duplicate "Last login" messages at terminal startup
-
-### 🐛 Fixed
-
-- Critical crash when opening charts with no data yet (`Series can't be empty`)
-- X-axis showing scientific notation (e.g. `1.7E12`) — now displays readable `HH:mm` times (e.g. 14:30)
-- Terminal keyboard bug preventing commands from being typed (input field fully rewritten)
-- **Room**: database bumped to **version 3** to prevent migration crashes
-- Crash when upgrading from an older version (empty fields in profiles)
 
 ## [Previous versions]
 

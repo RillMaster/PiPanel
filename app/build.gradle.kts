@@ -15,7 +15,7 @@ android {
     defaultConfig {
         applicationId = "com.rillmaster.pipanel"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 17
         versionName = "1.5.5"
 
